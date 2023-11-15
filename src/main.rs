@@ -31,6 +31,7 @@ fn main() {
     }
      
     while !rl.window_should_close() {
+
         if rl.is_window_focused() {
             rl.hide_cursor();
         }
@@ -94,5 +95,6 @@ fn main() {
         let mut s = String::new();
         write!(s, "Jiggle: {jiggle}").unwrap();
         d.draw_text(s.as_str(), 0, 0, 32, Color::BLUE);
+        d.draw_fps(0, 32);
     }
 }
