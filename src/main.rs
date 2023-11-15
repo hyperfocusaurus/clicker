@@ -18,8 +18,6 @@ fn main() {
         .build();
 
     let mut circles = Vec::new();
-    let mut _hue: f32 = 0.0;
-    const _EPSILON: f32 = 0.5;
     let mut fullscreen_needed = false;
     let mut jiggle = 3;
 
@@ -82,7 +80,7 @@ fn main() {
                 let x_dist = (other_x - *x).abs();
                 let y_dist = (other_y - *y).abs();
                 let dist = ((x_dist.pow(2) + y_dist.pow(2)) as f32).sqrt();
-                if dist < (circle_size + other_size)/2.0 {
+                if dist < (*circle_size + other_size) {
                     jiggle_x = -jiggle_x;
                     jiggle_y = -jiggle_y;
                 }
