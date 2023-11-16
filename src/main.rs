@@ -76,7 +76,7 @@ fn main() {
             }
         }
 
-        d.clear_background(Color::new(0x00, 0x00, 0x00, 0xA0));
+        d.clear_background(Color::new(0x00, 0x00, 0x00, 0xC0));
         let mouse_x = d.get_mouse_x();
         let mouse_y = d.get_mouse_y();
 
@@ -139,26 +139,34 @@ fn main() {
                 }
             }
 
-            const MOUSE_GRAVITY: f32 = 2.0;
+            let mut mouse_gravity = 0.0;
+            let mut mouse_distance = 100.0;
+            // left click to invert gravity
+            if d.is_mouse_button_down(MouseButton::MOUSE_LEFT_BUTTON) {
+                mouse_gravity = -0.15;
+                mouse_distance *= 3.0;
+            } else if d.is_mouse_button_down(MouseButton::MOUSE_RIGHT_BUTTON) {
+                mouse_gravity = 2.0;
+            }
             let mouse_x_dist = *x - mouse_x;
             let mouse_y_dist = *y - mouse_y;
             let mouse_dist = ((mouse_x_dist.pow(2) + mouse_y_dist.pow(2)) as f32).sqrt();
-            if mouse_dist < 100.0 {
-                new_velocity += Vector2::new(mouse_x_dist as f32, mouse_y_dist as f32) * MOUSE_GRAVITY;
+            if mouse_dist < mouse_distance {
+                new_velocity += Vector2::new(mouse_x_dist as f32, mouse_y_dist as f32) * mouse_gravity;
             }
-            new_x += jiggle_x;
 
-            if new_x >= width || new_x <= 0 {
+            new_x += jiggle_x;
+            if new_x >= width-*circle_size as i32 || new_x <= *circle_size as i32 {
                 new_velocity.x = -new_velocity.x;
             }
 
             new_y += jiggle_y;
-            if new_y >= height || new_y <= 0 {
+            if new_y >= height-*circle_size as i32 || new_y <= *circle_size as i32 {
                 new_velocity.y = -new_velocity.y;
             }
                 
-            (clamp!(new_x, 0, width), 
-             clamp!(new_y, 0, height),
+            (clamp!(new_x, *circle_size as i32, width-*circle_size as i32), 
+             clamp!(new_y, *circle_size as i32, height-*circle_size as i32),
              *circle_size,
              *color,
              new_velocity)
