@@ -1,4 +1,4 @@
-use macroquad::rand::rand;
+use macroquad::rand::{RandomRange,srand};
 use macroquad::ui::root_ui;
 use macroquad::prelude::*;
 use macroquad::color::hsl_to_rgb;
@@ -15,8 +15,7 @@ const DEFAULT_HEIGHT:i32 = 1080;
 const EPSILON:f32 = 0.1;
 
 fn get_random_value(min: i32, max: i32) -> i32 {
-    let r = rand() as i32;
-    return (r % (max-min)) + min;
+    i32::gen_range(min, max)
 }
 
 fn conf() -> Conf {
@@ -38,6 +37,7 @@ async fn main() {
     let mut fullscreen_requested = false;
     let mut jiggle = 3;
     let mut draw_gui = true;
+    srand(get_time() as u64);
 
     for _i in 0..1000 {
         let x = get_random_value(0, width);
@@ -58,6 +58,8 @@ async fn main() {
         }
         if fullscreen_requested {
             set_fullscreen(true);
+            width = screen_width() as i32;
+            height = screen_height() as i32;
             // maybe not needed?
             //rl.set_window_size(width, height);
             fullscreen_requested = !fullscreen_requested;
@@ -81,13 +83,6 @@ async fn main() {
         
         if is_key_pressed(KeyCode::F) {
             fullscreen_requested = !fullscreen_requested;
-            if fullscreen_requested {
-                width = screen_width() as i32;
-                height = screen_height() as i32;
-            } else {
-                width = DEFAULT_WIDTH;
-                height = DEFAULT_HEIGHT;
-            }
         }
 
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
