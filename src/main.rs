@@ -1,7 +1,8 @@
+use macroquad::rand::rand;
+use macroquad::ui::root_ui;
+use macroquad::prelude::*;
+use macroquad::color::hsl_to_rgb;
 use std::fmt::Write;
-use raylib::prelude::*;
-use raylib::core::color::{Color};
-use raylib::core::misc::{get_random_value};
 
 macro_rules! clamp {
     ($value: expr, $min: expr, $max:expr) => {
@@ -13,78 +14,90 @@ const DEFAULT_WIDTH:i32 = 1920;
 const DEFAULT_HEIGHT:i32 = 1080;
 const EPSILON:f32 = 0.1;
 
-fn main() {
+fn get_random_value(min: i32, max: i32) -> i32 {
+    let r = rand() as i32;
+    return (r % (max-min)) + min;
+}
+
+fn conf() -> Conf {
+    Conf {
+        window_title: String::from("Jiggle Balls"),
+        window_width: DEFAULT_WIDTH,
+        window_height: DEFAULT_HEIGHT,
+        fullscreen: false,
+        ..Default::default() 
+    }
+}
+
+#[macroquad::main(conf)]
+async fn main() {
     let mut width:i32 = DEFAULT_WIDTH;
     let mut height:i32 = DEFAULT_HEIGHT;
-    let (mut rl, thread) = raylib::init()
-        .size(width, height)
-        .transparent()
-        .title("Jiggle Balls")
-        .build();
 
     let mut circles = Vec::new();
     let mut fullscreen_requested = false;
     let mut jiggle = 3;
+    let mut draw_gui = true;
 
     for _i in 0..1000 {
         let x = get_random_value(0, width);
         let y = get_random_value(0, height);
-        let h = get_random_value::<i32>(0, 360) as f32;
-        let color = Color::color_from_hsv(h, 1.0, 1.0);
-        let circle_size = get_random_value::<i32>(5, 15) as f32;
-        let velocity = Vector2::new(0.0, 0.0);
+        let mut h = get_random_value(0, 100) as f32;
+        h /= 100.0;
+        let color = hsl_to_rgb(h, 1.0, 0.5);
+        let circle_size = get_random_value(5, 15) as f32;
+        let velocity = Vec2::new(0.0, 0.0);
         circles.push((x, y, circle_size, color, velocity));
     }
      
     loop {
-        let delta_time = rl.get_frame_time();
-        if rl.window_should_close() {
-            break;
-        }
+        let delta_time = get_frame_time();
 
-        if rl.is_window_focused() {
-            rl.hide_cursor();
+        if root_ui().active_window_focused() {
+            show_mouse(false);
         }
         if fullscreen_requested {
-            rl.toggle_fullscreen();
-            rl.set_window_size(width, height);
+            set_fullscreen(true);
+            // maybe not needed?
+            //rl.set_window_size(width, height);
             fullscreen_requested = !fullscreen_requested;
         }
 
-        let mut d = rl.begin_drawing(&thread);
-
-        if d.is_key_pressed(KeyboardKey::KEY_MINUS) {
+        if is_key_pressed(KeyCode::Minus) {
             jiggle -= 1;
         }
 
-        if d.is_key_pressed(KeyboardKey::KEY_EQUAL) {
+        if is_key_pressed(KeyCode::Equal) {
             jiggle += 1;
         }
 
-        if d.is_key_pressed(KeyboardKey::KEY_Q) {
+        if is_key_pressed(KeyCode::Q) {
             break;
         }
+
+        if is_key_pressed(KeyCode::G) {
+            draw_gui = !draw_gui;
+        }
         
-        if d.is_key_pressed(KeyboardKey::KEY_F) {
+        if is_key_pressed(KeyCode::F) {
             fullscreen_requested = !fullscreen_requested;
             if fullscreen_requested {
-                width = d.get_screen_width();
-                height = d.get_screen_height();
+                width = screen_width() as i32;
+                height = screen_height() as i32;
             } else {
                 width = DEFAULT_WIDTH;
                 height = DEFAULT_HEIGHT;
             }
         }
 
-        d.clear_background(Color::new(0x00, 0x00, 0x00, 0xC0));
-        let mouse_x = d.get_mouse_x();
-        let mouse_y = d.get_mouse_y();
+        clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
+        let (mouse_x, mouse_y) = mouse_position();
 
         circles = circles.iter().map(|circ| {
             let (x, y, circle_size, color, velocity) = circ;
             // draw the circle before doing anything else - everything else is setting up for the
             // next frame
-            d.draw_circle(*x, *y, *circle_size, color);
+            draw_circle(*x as f32, *y as f32, *circle_size, *color);
             let jiggle_x:i32 = get_random_value(-jiggle, jiggle);
             let jiggle_y:i32 = get_random_value(-jiggle, jiggle);
             let mut new_x = *x;
@@ -142,17 +155,17 @@ fn main() {
             let mut mouse_gravity = 0.0;
             let mut mouse_distance = 100.0;
             // left click to invert gravity
-            if d.is_mouse_button_down(MouseButton::MOUSE_LEFT_BUTTON) {
+            if is_mouse_button_down(MouseButton::Left) {
                 mouse_gravity = -0.15;
                 mouse_distance *= 3.0;
-            } else if d.is_mouse_button_down(MouseButton::MOUSE_RIGHT_BUTTON) {
+            } else if is_mouse_button_down(MouseButton::Right) {
                 mouse_gravity = 2.0;
             }
-            let mouse_x_dist = *x - mouse_x;
-            let mouse_y_dist = *y - mouse_y;
+            let mouse_x_dist = *x - mouse_x as i32;
+            let mouse_y_dist = *y - mouse_y as i32;
             let mouse_dist = ((mouse_x_dist.pow(2) + mouse_y_dist.pow(2)) as f32).sqrt();
             if mouse_dist < mouse_distance {
-                new_velocity += Vector2::new(mouse_x_dist as f32, mouse_y_dist as f32) * mouse_gravity;
+                new_velocity += Vec2::new(mouse_x_dist as f32, mouse_y_dist as f32) * mouse_gravity;
             }
 
             new_x += jiggle_x;
@@ -172,11 +185,15 @@ fn main() {
              new_velocity)
         }).collect();
 
-        d.draw_circle(mouse_x, mouse_y, 30.0, Color::BLUE);
+        draw_circle(mouse_x, mouse_y, 30.0, BLUE);
 
+        // -- gui layer
         let mut s = String::new();
         write!(s, "Jiggle: {jiggle}").unwrap();
-        d.draw_text(s.as_str(), 0, 0, 32, Color::BLUE);
-        d.draw_fps(0, 32);
+        draw_text(s.as_str(), 0.0, 20.0, 32.0, BLUE);
+        let fps = get_fps();
+        write!(s, "FPS: {fps}").unwrap();
+        draw_text(s.as_str(), 0.0, 52.0, 32.0, BLUE);
+        next_frame().await;
     }
 }
