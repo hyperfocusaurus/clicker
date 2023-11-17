@@ -57,7 +57,7 @@ async fn main() {
     let mut mouse_repel_force = 2.0;
     let mut mouse_attract_force:f32 = 0.15;
     let mut mouse_attract_distance:f32 = 100.0;
-    let mut medium_viscosity = 1000.0;
+    let mut medium_viscosity = 5.0;
     let mut num_circles = 1000;
     let mut num_circles_ui:f32 = 1000.0;
     srand(get_time() as u64);
@@ -137,9 +137,9 @@ async fn main() {
             if velocity.x != 0.0 {
                 new_x += (velocity.x * delta_time).round();
                 if new_velocity.x < 0.0 {
-                    new_velocity.x += (EPSILON * delta_time * medium_viscosity).powi(2);
+                    new_velocity.x += (EPSILON * delta_time * medium_viscosity * new_velocity.x.abs()).powi(2);
                 } else {
-                    new_velocity.x -= (EPSILON * delta_time * medium_viscosity).powi(2);
+                    new_velocity.x -= (EPSILON * delta_time * medium_viscosity * new_velocity.x.abs()).powi(2);
                 }
                 // if we're within EPSILON of zero, make us zero instead
                 // this stops us flapping around zero
@@ -152,9 +152,9 @@ async fn main() {
             if velocity.y != 0.0 {
                 new_y += (velocity.y * delta_time).round();
                 if new_velocity.y < 0.0 {
-                    new_velocity.y += (EPSILON * delta_time * medium_viscosity).powi(2);
+                    new_velocity.y += (EPSILON * delta_time * medium_viscosity * new_velocity.y.abs()).powi(2);
                 } else {
-                    new_velocity.y -= (EPSILON * delta_time * medium_viscosity).powi(2);
+                    new_velocity.y -= (EPSILON * delta_time * medium_viscosity * new_velocity.y.abs()).powi(2);
                 }
                 // if we're within EPSILON of zero, make us zero instead
                 // this stops us flapping around zero
@@ -175,8 +175,8 @@ async fn main() {
                 let y_dist = other_y - *y;
                 let dist = ((x_dist.powi(2) + y_dist.powi(2))).sqrt();
                 if dist < (*circle_size + other_size) {
-                    new_velocity.x -= x_dist as f32;
-                    new_velocity.y -= y_dist as f32;
+                    new_velocity.x -= x_dist;
+                    new_velocity.y -= y_dist;
                 }
             }
 
@@ -228,7 +228,7 @@ async fn main() {
         draw_text(s.as_str(), 0.0, 52.0, 32.0, BLUE);
 
         if show_gui {
-            Window::new(hash!(), vec2(20., 20.), vec2(420., 200.))
+            Window::new(hash!(), vec2(width - 620., 20.), vec2(420., 200.))
                 .label("Controls")
                 .close_button(false)
                 .ui(&mut root_ui(), |ui| {
@@ -241,7 +241,7 @@ async fn main() {
                     ui.slider(
                         hash!(),
                         "push force",
-                        1.0 .. 5.0,
+                        1.0 .. 15.0,
                         &mut mouse_repel_force,
                     );
                     ui.slider(
@@ -259,7 +259,7 @@ async fn main() {
                     ui.slider(
                         hash!(),
                         "drag coef.",
-                        50.0 .. 2500.0,
+                        0.0 .. 15.0,
                         &mut medium_viscosity,
                     );
                     ui.slider(
