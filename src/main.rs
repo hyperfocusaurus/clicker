@@ -12,8 +12,8 @@ const DEFAULT_WIDTH:f32 = 1920.0;
 const DEFAULT_HEIGHT:f32 = 1080.0;
 const EPSILON:f32 = 0.1;
 
-fn get_random_value(min: i32, max: i32) -> i32 {
-    i32::gen_range(min, max)
+fn get_random_value<T: RandomRange>(min: T, max: T) -> T {
+    T::gen_range(min, max)
 }
 
 fn conf() -> Conf {
@@ -23,6 +23,20 @@ fn conf() -> Conf {
         window_height: DEFAULT_HEIGHT as i32,
         fullscreen: false,
         ..Default::default() 
+    }
+}
+
+fn reset_circles (circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, num_circles: u32, width: f32, height: f32)  {
+    circles.clear();
+    for _i in 0..num_circles {
+        let x = get_random_value(0, width as i32) as f32;
+        let y = get_random_value(0, height as i32) as f32;
+        let mut h = get_random_value(0, 100) as f32;
+        h /= 100.0;
+        let color = hsl_to_rgb(h, 1.0, 0.5);
+        let circle_size = get_random_value(5, 15) as f32;
+        let velocity = Vec2::new(0.0, 0.0);
+        circles.push((x, y, circle_size, color, velocity));
     }
 }
 
@@ -39,19 +53,11 @@ async fn main() {
     let mut mouse_repel_force = 2.0;
     let mut mouse_attract_force = 0.15;
     let mut mouse_attract_distance = 100.0;
-    let mut medium_viscosity: f32 = 1000.0;
+    let mut medium_viscosity = 1000.0;
+    let mut num_circles = 1000;
     srand(get_time() as u64);
 
-    for _i in 0..1000 {
-        let x = get_random_value(0, width as i32) as f32;
-        let y = get_random_value(0, height as i32) as f32;
-        let mut h = get_random_value(0, 100) as f32;
-        h /= 100.0;
-        let color = hsl_to_rgb(h, 1.0, 0.5);
-        let circle_size = get_random_value(5, 15) as f32;
-        let velocity = Vec2::new(0.0, 0.0);
-        circles.push((x, y, circle_size, color, velocity));
-    }
+    reset_circles(&mut circles, num_circles, width, height);
      
     loop {
         let delta_time = get_frame_time();
@@ -86,6 +92,10 @@ async fn main() {
 
         if is_key_pressed(KeyCode::G) {
             show_gui = !show_gui;
+        }
+
+        if is_key_pressed(KeyCode::R) {
+            reset_circles(&mut circles, num_circles, width, height);
         }
 
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
@@ -232,9 +242,14 @@ async fn main() {
                         50.0 .. 2500.0,
                         &mut medium_viscosity,
                     );
+                    ui.drag(
+                        hash!(),
+                        "Number of Balls",
+                        (1 , 1000),
+                        &mut num_circles,
+                    );
                 });
         }
-
 
         next_frame().await;
     }
