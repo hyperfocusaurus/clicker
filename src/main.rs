@@ -10,7 +10,7 @@ use std::fmt::Write;
 
 const DEFAULT_WIDTH:f32 = 1920.0;
 const DEFAULT_HEIGHT:f32 = 1080.0;
-const EPSILON:f32 = 0.1;
+const EPSILON:f32 = 0.01;
 
 fn get_random_value<T: RandomRange>(min: T, max: T) -> T {
     T::gen_range(min, max)
@@ -57,14 +57,22 @@ async fn main() {
     let mut mouse_repel_force = 2.0;
     let mut mouse_attract_force:f32 = 0.15;
     let mut mouse_attract_distance:f32 = 100.0;
-    let mut medium_viscosity = 5.0;
+    let mut medium_viscosity = 100.0;
     let mut num_circles = 1000;
     let mut num_circles_ui:f32 = 1000.0;
     let mut gravity_enabled = false;
+
+    let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf").await.expect("Could not load UI font");
+
     srand(get_time() as u64);
 
     reset_circles(&mut circles, num_circles, width, height);
-     
+    let hud_textparams = TextParams {
+        font: Some(&ui_font),
+        font_size: 32, 
+        color: BLUE,
+        ..Default::default()
+    }; 
     loop {
         let delta_time = get_frame_time();
 
@@ -180,8 +188,8 @@ async fn main() {
                 let y_dist = other_y - *y;
                 let dist = ((x_dist.powi(2) + y_dist.powi(2))).sqrt();
                 if dist < (*circle_size + other_size) {
-                    new_velocity.x -= x_dist;
-                    new_velocity.y -= y_dist;
+                    new_velocity.x -= x_dist/2.0;
+                    new_velocity.y -= y_dist/2.0;
                 }
             }
 
@@ -222,15 +230,17 @@ async fn main() {
 
         draw_circle(mouse_x, mouse_y, 30.0, BLUE);
 
+
         // -- gui layer
+        draw_rectangle(0.0, 0.0, 200.0, 80.0, Color::from_rgba(0x00, 0xFF, 0xFF, 0xA0));
         let mut s = String::new();
         write!(s, "Jiggle: {jiggle}").unwrap();
-        draw_text(s.as_str(), 0.0, 20.0, 32.0, BLUE);
+        draw_text_ex(s.as_str(), 0.0, 32.0, hud_textparams.clone());
         s.clear();
         let fps = get_fps();
         s.clear();
         write!(s, "FPS: {fps}").unwrap();
-        draw_text(s.as_str(), 0.0, 52.0, 32.0, BLUE);
+        draw_text_ex(s.as_str(), 0.0, 64.0, hud_textparams.clone());
 
         if show_gui {
             Window::new(hash!(), vec2(width - 620., 20.), vec2(420., 200.))
@@ -264,7 +274,7 @@ async fn main() {
                     ui.slider(
                         hash!(),
                         "drag coef.",
-                        0.0 .. 15.0,
+                        0.0 .. 250.0,
                         &mut medium_viscosity,
                     );
                     ui.slider(
