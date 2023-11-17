@@ -10,7 +10,6 @@ use std::fmt::Write;
 
 const DEFAULT_WIDTH:f32 = 1920.0;
 const DEFAULT_HEIGHT:f32 = 1080.0;
-const EPSILON:f32 = 0.01;
 
 fn get_random_value<T: RandomRange>(min: T, max: T) -> T {
     T::gen_range(min, max)
@@ -27,12 +26,12 @@ fn conf() -> Conf {
 }
 
 fn gen_circle(circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, width: f32, height: f32) {
-        let x = get_random_value(0, width as i32) as f32;
-        let y = get_random_value(0, height as i32) as f32;
-        let mut h = get_random_value(0, 100) as f32;
+        let x = get_random_value(0.0, width);
+        let y = get_random_value(0.0, height);
+        let mut h = get_random_value(0.0, 100.0);
         h /= 100.0;
         let color = hsl_to_rgb(h, 0.5, 0.5);
-        let circle_size = get_random_value(5, 15) as f32;
+        let circle_size = get_random_value(5.0, 15.0);
         let velocity = Vec2::new(0.0, 0.0);
         circles.push((x, y, circle_size, color, velocity));
 }
@@ -61,6 +60,7 @@ async fn main() {
     let mut num_circles = 1000;
     let mut num_circles_ui:f32 = 1000.0;
     let mut gravity_enabled = false;
+    let mut particle_repel_force = 10.0;
 
     let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf").await.expect("Could not load UI font");
 
@@ -146,35 +146,22 @@ async fn main() {
                 new_velocity.y += 98.1;
             }
 
-            // "drag" simulation
-            if velocity.x != 0.0 {
-                new_x += (velocity.x * delta_time).round();
-                if new_velocity.x < 0.0 {
-                    new_velocity.x += (EPSILON * delta_time * medium_viscosity * new_velocity.x.abs()).powi(2);
-                } else {
-                    new_velocity.x -= (EPSILON * delta_time * medium_viscosity * new_velocity.x.abs()).powi(2);
-                }
-                // if we're within EPSILON of zero, make us zero instead
-                // this stops us flapping around zero
-                if (new_velocity.x - EPSILON).abs() < EPSILON {
-                    new_velocity.x = 0.0;
-                }
+            let mut new_pos = vec2(new_x, new_y);
+            new_pos += *velocity * delta_time;
+            if velocity.x != 0.0 || velocity.y != 0.0 {
+                new_velocity -= velocity.normalize() * delta_time * medium_viscosity;
             }
 
-            // "drag" simulation
-            if velocity.y != 0.0 {
-                new_y += (velocity.y * delta_time).round();
-                if new_velocity.y < 0.0 {
-                    new_velocity.y += (EPSILON * delta_time * medium_viscosity * new_velocity.y.abs()).powi(2);
-                } else {
-                    new_velocity.y -= (EPSILON * delta_time * medium_viscosity * new_velocity.y.abs()).powi(2);
-                }
-                // if we're within EPSILON of zero, make us zero instead
-                // this stops us flapping around zero
-                if (new_velocity.y - EPSILON).abs() < EPSILON {
-                    new_velocity.y = 0.0;
-                }
+            if new_velocity.x < 0.01 && new_velocity.x > -0.01 {
+                new_velocity.x = 0.0;
             }
+            if new_velocity.y < 0.01 && new_velocity.y > -0.01 {
+                new_velocity.y = 0.0;
+            }
+                
+
+            new_x = new_pos.x;
+            new_y = new_pos.y;
 
 
             // collision detection
@@ -188,8 +175,7 @@ async fn main() {
                 let y_dist = other_y - *y;
                 let dist = ((x_dist.powi(2) + y_dist.powi(2))).sqrt();
                 if dist < (*circle_size + other_size) {
-                    new_velocity.x -= x_dist/2.0;
-                    new_velocity.y -= y_dist/2.0;
+                    new_velocity -= vec2(x_dist, y_dist).normalize() * dist * delta_time * particle_repel_force;
                 }
             }
 
@@ -280,8 +266,14 @@ async fn main() {
                     ui.slider(
                         hash!(),
                         "ball count",
-                        1.0 .. 1000.0,
+                        1.0 .. 3000.0,
                         &mut num_circles_ui,
+                    );
+                    ui.slider(
+                        hash!(),
+                        "ball repel",
+                        1.0 .. 100.0,
+                        &mut particle_repel_force,
                     );
                     ui.checkbox(
                         hash!(),
