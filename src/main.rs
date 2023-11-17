@@ -1,5 +1,5 @@
 use miniquad::window::screen_size;
-use macroquad::rand::{RandomRange,srand};
+use quad_rand::{RandomRange, srand};
 use macroquad::ui::root_ui;
 use macroquad::ui::widgets::Window;
 use macroquad::prelude::*;
@@ -31,7 +31,7 @@ fn gen_circle(circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, width: f32, heigh
         let y = get_random_value(0, height as i32) as f32;
         let mut h = get_random_value(0, 100) as f32;
         h /= 100.0;
-        let color = hsl_to_rgb(h, 1.0, 0.5);
+        let color = hsl_to_rgb(h, 0.5, 0.5);
         let circle_size = get_random_value(5, 15) as f32;
         let velocity = Vec2::new(0.0, 0.0);
         circles.push((x, y, circle_size, color, velocity));
@@ -55,8 +55,8 @@ async fn main() {
     let mut is_fullscreen = false;
     let mut jiggle:f32 = 3.0;
     let mut mouse_repel_force = 2.0;
-    let mut mouse_attract_force = 0.15;
-    let mut mouse_attract_distance = 100.0;
+    let mut mouse_attract_force:f32 = 0.15;
+    let mut mouse_attract_distance:f32 = 100.0;
     let mut medium_viscosity = 1000.0;
     let mut num_circles = 1000;
     let mut num_circles_ui:f32 = 1000.0;
@@ -77,11 +77,15 @@ async fn main() {
         } else if circles.len() > num_circles.try_into().unwrap() {
             circles.drain((num_circles as usize)..);
         }
-
+        // truncate some of the floats that deal with pixel values so they're more realistic
+        jiggle = jiggle.trunc();
+        mouse_attract_distance = mouse_attract_distance.trunc();
 
         (width, height) = screen_size();
-        if root_ui().active_window_focused() {
+        if !show_gui {
             show_mouse(false);
+        } else {
+            show_mouse(true);
         }
         if fullscreen_requested {
             is_fullscreen = !is_fullscreen;
@@ -123,8 +127,8 @@ async fn main() {
             // draw the circle before doing anything else - everything else is setting up for the
             // next frame
             draw_circle(*x, *y, *circle_size, *color);
-            let jiggle_x:f32 = get_random_value(-(jiggle as i32), jiggle as i32) as f32;
-            let jiggle_y:f32 = get_random_value(-(jiggle as i32), jiggle as i32) as f32;
+            let jiggle_x:f32 = get_random_value(-(jiggle), jiggle);
+            let jiggle_y:f32 = get_random_value(-(jiggle), jiggle);
             let mut new_x = *x;
             let mut new_y = *y;
             let mut new_velocity = velocity.clone();
@@ -180,7 +184,6 @@ async fn main() {
             if !show_gui {
                 let mut mouse_gravity = 0.0;
                 let mut mouse_distance = mouse_attract_distance;
-                // left click to invert gravity
                 if is_mouse_button_down(MouseButton::Left) {
                     mouse_gravity = -mouse_attract_force;
                     mouse_distance *= 3.0;
@@ -225,7 +228,7 @@ async fn main() {
         draw_text(s.as_str(), 0.0, 52.0, 32.0, BLUE);
 
         if show_gui {
-            Window::new(hash!(), vec2(20., 20.), vec2(420., 700.))
+            Window::new(hash!(), vec2(20., 20.), vec2(420., 200.))
                 .label("Controls")
                 .close_button(false)
                 .ui(&mut root_ui(), |ui| {
@@ -237,31 +240,31 @@ async fn main() {
                     );
                     ui.slider(
                         hash!(),
-                        "Mouse Repel Force",
+                        "push force",
                         1.0 .. 5.0,
                         &mut mouse_repel_force,
                     );
                     ui.slider(
                         hash!(),
-                        "Mouse Attract Force",
+                        "pull force",
                         0.05 .. 1.0,
                         &mut mouse_attract_force,
                     );
                     ui.slider(
                         hash!(),
-                        "Mouse Attract Distance",
+                        "pull dist.",
                         1.0 .. 500.0,
                         &mut mouse_attract_distance,
                     );
                     ui.slider(
                         hash!(),
-                        "Viscosity of Medium",
+                        "drag coef.",
                         50.0 .. 2500.0,
                         &mut medium_viscosity,
                     );
                     ui.slider(
                         hash!(),
-                        "Number of Balls",
+                        "ball count",
                         1.0 .. 1000.0,
                         &mut num_circles_ui,
                     );
