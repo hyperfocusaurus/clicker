@@ -50,7 +50,6 @@ async fn main() {
     let mut show_gui = false;
 
     let mut circles = Vec::new();
-    let mut fullscreen_requested = false;
     let mut is_fullscreen = false;
     let mut jiggle:f32 = 3.0;
     let mut mouse_repel_force = 2.0;
@@ -96,13 +95,6 @@ async fn main() {
         } else {
             show_mouse(true);
         }
-        if fullscreen_requested {
-            is_fullscreen = !is_fullscreen;
-            set_fullscreen(is_fullscreen);
-            // maybe not needed?
-            request_new_screen_size(width, height);
-            fullscreen_requested = !fullscreen_requested;
-        }
 
         if is_key_pressed(KeyCode::Minus) {
             jiggle -= 1.0;
@@ -117,7 +109,10 @@ async fn main() {
         }
 
         if is_key_pressed(KeyCode::F) {
-            fullscreen_requested = !fullscreen_requested;
+            is_fullscreen = !is_fullscreen;
+            set_fullscreen(is_fullscreen);
+            // maybe not needed?
+            //request_new_screen_size(width, height);
         }
 
         if is_key_pressed(KeyCode::G) {
@@ -166,16 +161,16 @@ async fn main() {
 
             // collision detection
             for other in &circles[..] {
-                if *other == *circ {
+                if other == circ {
                     continue;
                 }
                 // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
                 let (other_x, other_y, other_size, _, _) = other;
-                let x_dist = other_x - *x;
-                let y_dist = other_y - *y;
-                let dist = ((x_dist.powi(2) + y_dist.powi(2))).sqrt();
-                if dist < (*circle_size + other_size) {
-                    new_velocity -= vec2(x_dist, y_dist).normalize() * dist * delta_time * particle_repel_force;
+                let dist = vec2(*other_x, *other_y).distance_squared(vec2(*x, *y));
+                if dist < (*circle_size + other_size)*(*circle_size + other_size) {
+                    let x_dist = *other_x - *x;
+                    let y_dist = *other_y - *y;
+                    new_velocity -= vec2(x_dist, y_dist).normalize() * dist.sqrt() * delta_time * particle_repel_force;
                 }
             }
 
@@ -199,12 +194,12 @@ async fn main() {
 
             new_x += jiggle_x;
             if new_x >= width - *circle_size || new_x <= *circle_size {
-                new_velocity.x = -new_velocity.x;
+                new_velocity.x = -(new_velocity.x / 2.0);
             }
 
             new_y += jiggle_y;
             if new_y >= height - *circle_size || new_y <= *circle_size {
-                new_velocity.y = -new_velocity.y;
+                new_velocity.y = -(new_velocity.y / 2.0);
             }
                 
             (new_x.clamp(*circle_size, width - *circle_size), 
