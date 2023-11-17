@@ -26,9 +26,7 @@ fn conf() -> Conf {
     }
 }
 
-fn reset_circles (circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, num_circles: u32, width: f32, height: f32)  {
-    circles.clear();
-    for _i in 0..num_circles {
+fn gen_circle(circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, width: f32, height: f32) {
         let x = get_random_value(0, width as i32) as f32;
         let y = get_random_value(0, height as i32) as f32;
         let mut h = get_random_value(0, 100) as f32;
@@ -37,6 +35,12 @@ fn reset_circles (circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, num_circles: 
         let circle_size = get_random_value(5, 15) as f32;
         let velocity = Vec2::new(0.0, 0.0);
         circles.push((x, y, circle_size, color, velocity));
+}
+
+fn reset_circles (circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, num_circles: u32, width: f32, height: f32)  {
+    circles.clear();
+    for _i in 0..num_circles {
+        gen_circle(circles, width, height);
     }
 }
 
@@ -55,12 +59,25 @@ async fn main() {
     let mut mouse_attract_distance = 100.0;
     let mut medium_viscosity = 1000.0;
     let mut num_circles = 1000;
+    let mut num_circles_ui:f32 = 1000.0;
     srand(get_time() as u64);
 
     reset_circles(&mut circles, num_circles, width, height);
      
     loop {
         let delta_time = get_frame_time();
+
+        num_circles_ui = num_circles_ui.floor();
+        num_circles = num_circles_ui as u32;
+
+        if circles.len() < num_circles.try_into().unwrap() {
+            for _ in 1..num_circles - circles.len() as u32 {
+                gen_circle(&mut circles, width, height);
+            }
+        } else if circles.len() > num_circles.try_into().unwrap() {
+            circles.drain((num_circles as usize)..);
+        }
+
 
         (width, height) = screen_size();
         if root_ui().active_window_focused() {
@@ -242,11 +259,11 @@ async fn main() {
                         50.0 .. 2500.0,
                         &mut medium_viscosity,
                     );
-                    ui.drag(
+                    ui.slider(
                         hash!(),
                         "Number of Balls",
-                        (1 , 1000),
-                        &mut num_circles,
+                        1.0 .. 1000.0,
+                        &mut num_circles_ui,
                     );
                 });
         }
