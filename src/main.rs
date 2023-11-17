@@ -60,6 +60,7 @@ async fn main() {
     let mut medium_viscosity = 5.0;
     let mut num_circles = 1000;
     let mut num_circles_ui:f32 = 1000.0;
+    let mut gravity_enabled = false;
     srand(get_time() as u64);
 
     reset_circles(&mut circles, num_circles, width, height);
@@ -132,6 +133,10 @@ async fn main() {
             let mut new_x = *x;
             let mut new_y = *y;
             let mut new_velocity = velocity.clone();
+
+            if gravity_enabled {
+                new_velocity.y += 98.1;
+            }
 
             // "drag" simulation
             if velocity.x != 0.0 {
@@ -267,6 +272,11 @@ async fn main() {
                         "ball count",
                         1.0 .. 1000.0,
                         &mut num_circles_ui,
+                    );
+                    ui.checkbox(
+                        hash!(),
+                        "gravity",
+                        &mut gravity_enabled,
                     );
                 });
         }
