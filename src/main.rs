@@ -52,6 +52,7 @@ fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, h
 
 #[derive(Deserialize, Serialize)]
 struct JiggleBallsConfig {
+    is_fullscreen: bool,
     jiggle: f32,
     mouse_repel_force: f32,
     mouse_attract_force: f32,
@@ -83,10 +84,10 @@ async fn main() {
 
     let mut circles = Vec::new();
     let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
-    let mut is_fullscreen = false;
 
     // the default values for all the configurable stuff
     let mut config = JiggleBallsConfig {
+     is_fullscreen : false,
      jiggle : 3.0,
      mouse_repel_force : 2.0,
      mouse_attract_force :  0.15,
@@ -138,6 +139,7 @@ async fn main() {
         color: BLUE,
         ..Default::default()
     };
+    set_fullscreen(config.is_fullscreen);
     loop {
         let delta_time = get_frame_time();
 
@@ -178,8 +180,8 @@ async fn main() {
         }
 
         if is_key_pressed(KeyCode::F) {
-            is_fullscreen = !is_fullscreen;
-            set_fullscreen(is_fullscreen);
+            config.is_fullscreen = !config.is_fullscreen;
+            set_fullscreen(config.is_fullscreen);
             // maybe not needed?
             //request_new_screen_size(width, height);
         }
