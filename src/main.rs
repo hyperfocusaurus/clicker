@@ -47,32 +47,62 @@ fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, h
         circles.push(circle);
     }
 }
+struct JiggleBallsConfig {
+    jiggle: f32,
+    mouse_repel_force: f32,
+    mouse_attract_force: f32,
+    mouse_attract_distance: f32,
+    medium_viscosity: f32,
+    num_circles: u32,
+    num_circles_ui: f32,
+    gravity_enabled: bool,
+    particle_repel_force: f32,
+    allow_ball_intersection: bool,
+    draw_velocities: bool,
+    boids: bool,
+    boids_box_size: f32,
+    separation_distance: f32,
+    separation_weight: f32,
+    alignment_weight: f32,
+    cohesion_weight: f32,
+    avoid_walls_weight: f32,
+    boid_amount: f32,
+    max_velocity: f32,
+}
 
 #[macroquad::main(conf)]
 async fn main() {
     let mut width: f32 = DEFAULT_WIDTH;
     let mut height: f32 = DEFAULT_HEIGHT;
     let mut show_gui = false;
+    let mut show_debug_gui = false;
 
     let mut circles = Vec::new();
     let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
     let mut is_fullscreen = false;
-    let mut jiggle: f32 = 3.0;
-    let mut mouse_repel_force = 2.0;
-    let mut mouse_attract_force: f32 = 0.15;
-    let mut mouse_attract_distance: f32 = 100.0;
-    let mut medium_viscosity = 100.0;
-    let mut num_circles = 1000;
-    let mut num_circles_ui: f32 = 1000.0;
-    let mut gravity_enabled = false;
-    let mut particle_repel_force = 30.0;
-    let mut allow_ball_intersection = false;
-    let mut draw_velocities = false;
-    let mut boids = false;
-    let mut separation_distance = 10.0;
-    let mut separation_weight = 0.1;
-    let mut alignment_weight = 0.1;
-    let mut cohesion_weight = 0.1;
+
+    let mut config = JiggleBallsConfig {
+     jiggle :  3.0,
+     mouse_repel_force : 2.0,
+     mouse_attract_force :  0.15,
+     mouse_attract_distance :  100.0,
+     medium_viscosity : 100.0,
+     num_circles : 1000,
+     num_circles_ui :  1000.0,
+     gravity_enabled : false,
+     particle_repel_force : 30.0,
+     allow_ball_intersection : false,
+     draw_velocities : false,
+     boids : false,
+     boids_box_size : 10.0,
+     separation_distance : 10.0,
+     separation_weight : 1.0,
+     alignment_weight : 1.0,
+     cohesion_weight : 1.0,
+     avoid_walls_weight : 0.01,
+     boid_amount : 10.0,
+     max_velocity : 50.0,
+    };
 
     let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf")
         .await
@@ -80,7 +110,7 @@ async fn main() {
 
     srand(get_time() as u64);
 
-    reset_circles(&mut circles, num_circles, width, height);
+    reset_circles(&mut circles, config.num_circles, width, height);
     circles_quadtree.clear();
     for circ in circles.clone() {
         circles_quadtree.insert(circ.clone());
@@ -94,22 +124,22 @@ async fn main() {
     loop {
         let delta_time = get_frame_time();
 
-        num_circles_ui = num_circles_ui.floor();
-        num_circles = num_circles_ui as u32;
+        config.num_circles_ui = config.num_circles_ui.floor();
+        config.num_circles = config.num_circles_ui as u32;
 
-        if circles.len() < num_circles.try_into().unwrap() {
-            for _ in 1..num_circles - circles.len() as u32 {
+        if circles.len() < config.num_circles.try_into().unwrap() {
+            for _ in 1..config.num_circles - circles.len() as u32 {
                 let circle = Box::new(gen_circle(width, height));
                 circles_quadtree.insert(circle.clone());
                 circles.push(circle);
             }
-        } else if circles.len() > num_circles.try_into().unwrap() {
-            circles.drain((num_circles as usize)..);
+        } else if circles.len() > config.num_circles.try_into().unwrap() {
+            circles.drain((config.num_circles as usize)..);
         }
 
         // truncate some of the floats that deal with pixel values so they're more realistic
-        jiggle = jiggle.trunc();
-        mouse_attract_distance = mouse_attract_distance.trunc();
+        config.jiggle = config.jiggle.trunc();
+        config.mouse_attract_distance = config.mouse_attract_distance.trunc();
 
         (width, height) = screen_size();
         if !show_gui {
@@ -119,11 +149,11 @@ async fn main() {
         }
 
         if is_key_pressed(KeyCode::Minus) {
-            jiggle -= 1.0;
+            config.jiggle -= 1.0;
         }
 
         if is_key_pressed(KeyCode::Equal) {
-            jiggle += 1.0;
+            config.jiggle += 1.0;
         }
 
         if is_key_pressed(KeyCode::Q) {
@@ -141,8 +171,16 @@ async fn main() {
             show_gui = !show_gui;
         }
 
+        if is_key_pressed(KeyCode::D) {
+            show_debug_gui = !show_debug_gui;
+        }
+
         if is_key_pressed(KeyCode::R) {
-            reset_circles(&mut circles, num_circles, width, height);
+            reset_circles(&mut circles, config.num_circles, width, height);
+            circles_quadtree.clear();
+            for circ in circles.clone() {
+                circles_quadtree.insert(circ.clone());
+            }
         }
 
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
@@ -154,7 +192,7 @@ async fn main() {
                 let Circle(mut x, mut y, circle_size, color, velocity) = **circ;
                 // draw the circle before doing anything else - everything else is setting up for the
                 // next frame
-                if !allow_ball_intersection {
+                if !config.allow_ball_intersection {
                     let query_range = Rect::new(x - 50.0, y - 50.0, 100.0, 100.0);
                     let results = circles_quadtree.query(query_range);
                     for other in results {
@@ -173,20 +211,29 @@ async fn main() {
                     }
                 }
                 draw_circle(x, y, circle_size, color);
-                let jiggle_x: f32 = get_random_value(-(jiggle), jiggle);
-                let jiggle_y: f32 = get_random_value(-(jiggle), jiggle);
+
+                if config.draw_velocities {
+                    let Vec2 {
+                        x: next_x,
+                        y: next_y,
+                    } = vec2(x, y) + velocity;
+                    draw_line(x, y, next_x, next_y, 1.0, RED);
+                }
+
+                let jiggle_x: f32 = get_random_value(-(config.jiggle), config.jiggle);
+                let jiggle_y: f32 = get_random_value(-(config.jiggle), config.jiggle);
                 let mut new_x = x;
                 let mut new_y = y;
                 let mut new_velocity = velocity.clone();
 
-                if gravity_enabled {
+                if config.gravity_enabled {
                     new_velocity.y += 9.81;
                 }
 
                 let mut new_pos = vec2(new_x, new_y);
                 new_pos += velocity * delta_time;
                 if velocity.x != 0.0 || velocity.y != 0.0 {
-                    new_velocity -= velocity.normalize() * delta_time * medium_viscosity;
+                    new_velocity -= velocity.normalize() * delta_time * config.medium_viscosity;
                 }
 
                 if new_velocity.x < 0.01 && new_velocity.x > -0.01 {
@@ -195,13 +242,14 @@ async fn main() {
                 if new_velocity.y < 0.01 && new_velocity.y > -0.01 {
                     new_velocity.y = 0.0;
                 }
-                if draw_velocities {
-                    let Vec2{x: next_x, y: next_y} = vec2(x, y) + new_velocity;
-                    draw_line(x, y, next_x, next_y, 1.0, RED);
-                }
 
-                if boids {
-                    let query_range = Rect::new(x - 50.0, y - 50.0, 100.0, 100.0);
+                if config.boids {
+                    let query_range = Rect::new(
+                        x - (config.boids_box_size / 2.0),
+                        y - (config.boids_box_size / 2.0),
+                        config.boids_box_size,
+                        config.boids_box_size,
+                    );
                     let results = circles_quadtree.query(query_range);
                     if results.len() > 0 {
                         let mut separation = Vec2::default();
@@ -213,32 +261,40 @@ async fn main() {
                                 continue; // Skip self
                             }
 
-                            let Circle(other_x, other_y, _, _, _) = **other;
+                            let Circle(other_x, other_y, _, _, other_velocity) = **other;
                             let to_other = vec2(other_x, other_y) - vec2(x, y);
 
                             // Separation: Move away from close neighbors
-                            if to_other.length() < separation_distance {
+                            if to_other.length() < config.separation_distance {
                                 separation -= to_other.normalize();
                             }
 
                             // Alignment: Align with the average velocity of neighbors
-                            alignment += (*other).1;
+                            alignment += other_velocity;
 
                             // Cohesion: Move towards the average position of neighbors
                             cohesion += vec2(other_x, other_y);
                         }
 
                         if results.len() > 1 {
-                            alignment /= (results.len() - 1) as f32; // Exclude self from alignment calculation
-                            cohesion /= (results.len() - 1) as f32; // Exclude self from cohesion calculation
-
-                            separation *= separation_weight;
-                            alignment *= alignment_weight;
-                            cohesion = (cohesion - vec2(x, y)).normalize() * cohesion_weight;
-
-                            new_velocity += separation + alignment + cohesion;
+                            // turn alignment and cohesion into mean averages of position/velocity
+                            alignment /= (results.len() - 1) as f32;
+                            cohesion /= (results.len() - 1) as f32;
                         }
+                        let mut avoid_walls = vec2(width / 2.0, height / 2.0) - vec2(x, y);
+                        avoid_walls *= config.avoid_walls_weight;
+                        separation  *= config.separation_weight;
+                        alignment   *= config.alignment_weight;
+                        cohesion = (cohesion - vec2(x, y)).normalize() * config.cohesion_weight;
+
+                        new_velocity +=
+                            (separation + alignment + cohesion + avoid_walls) * delta_time * config.boid_amount;
                     }
+                }
+
+                // if the magnitude of the velocity > max_velocity, clamp it back to that
+                if new_velocity.length() > config.max_velocity {
+                    new_velocity = new_velocity.normalize() * config.max_velocity;
                 }
 
                 new_x = new_pos.x;
@@ -261,19 +317,19 @@ async fn main() {
                         new_velocity -= vec2(x_dist, y_dist).normalize()
                             * dist
                             * delta_time
-                            * particle_repel_force;
+                            * config.particle_repel_force;
                     }
                 }
 
                 // disable the mouse interaction while the gui is on screen
                 if !show_gui {
                     let mut mouse_gravity = 0.0;
-                    let mut mouse_distance = mouse_attract_distance;
+                    let mut mouse_distance = config.mouse_attract_distance;
                     if is_mouse_button_down(MouseButton::Left) {
-                        mouse_gravity = -mouse_attract_force;
+                        mouse_gravity = -config.mouse_attract_force;
                         mouse_distance *= 3.0;
                     } else if is_mouse_button_down(MouseButton::Right) {
-                        mouse_gravity = mouse_repel_force;
+                        mouse_gravity = config.mouse_repel_force;
                     }
                     let mouse_x_dist = x - mouse_x;
                     let mouse_y_dist = y - mouse_y;
@@ -284,12 +340,12 @@ async fn main() {
                     }
                 }
 
-                new_x += jiggle_x;
+                new_velocity.x += jiggle_x;
                 if new_x >= width - circle_size || new_x <= circle_size {
                     new_velocity.x = -(new_velocity.x / 2.0);
                 }
 
-                new_y += jiggle_y;
+                new_velocity.y += jiggle_y;
                 if new_y >= height - circle_size || new_y <= circle_size {
                     new_velocity.y = -(new_velocity.y / 2.0);
                 }
@@ -307,52 +363,58 @@ async fn main() {
         draw_circle(mouse_x, mouse_y, 30.0, BLUE);
 
         // -- gui layer
-        draw_rectangle(
-            0.0,
-            0.0,
-            200.0,
-            80.0,
-            Color::from_rgba(0x00, 0xFF, 0xFF, 0xA0),
-        );
-        let mut s = String::new();
-        write!(s, "Jiggle: {jiggle}").unwrap();
-        draw_text_ex(s.as_str(), 0.0, 32.0, hud_textparams.clone());
-        s.clear();
-        let fps = get_fps();
-        s.clear();
-        write!(s, "FPS: {fps}").unwrap();
-        draw_text_ex(s.as_str(), 0.0, 64.0, hud_textparams.clone());
+        if show_debug_gui {
+            draw_rectangle(
+                0.0,
+                0.0,
+                200.0,
+                80.0,
+                Color::from_rgba(0x00, 0xFF, 0xFF, 0xA0),
+            );
+            let mut s = String::new();
+            write!(s, "Jiggle: {}", config.jiggle).unwrap();
+            draw_text_ex(s.as_str(), 0.0, 32.0, hud_textparams.clone());
+            s.clear();
+            let fps = get_fps();
+            s.clear();
+            write!(s, "FPS: {fps}").unwrap();
+            draw_text_ex(s.as_str(), 0.0, 64.0, hud_textparams.clone());
+        }
 
         if show_gui {
             let mut window_height = 300.0;
-            if boids {
-                window_height += 100.0;
+            if config.boids {
+                window_height += 150.0;
             }
             Window::new(hash!(), vec2(width - 620., 20.), vec2(420., window_height))
                 .label("Controls")
                 .close_button(false)
                 .ui(&mut root_ui(), |ui| {
-                    ui.slider(hash!(), "Jiggle", 0.0..100.0, &mut jiggle);
-                    ui.slider(hash!(), "push force", 1.0..15.0, &mut mouse_repel_force);
-                    ui.slider(hash!(), "pull force", 0.05..1.0, &mut mouse_attract_force);
+                    ui.slider(hash!(), "Jiggle", 0.0..100.0, &mut config.jiggle);
+                    ui.slider(hash!(), "push force", 1.0..15.0, &mut config.mouse_repel_force);
+                    ui.slider(hash!(), "pull force", 0.05..1.0, &mut config.mouse_attract_force);
                     ui.slider(
                         hash!(),
                         "pull dist.",
                         1.0..500.0,
-                        &mut mouse_attract_distance,
+                        &mut config.mouse_attract_distance,
                     );
-                    ui.slider(hash!(), "drag coef.", 0.0..250.0, &mut medium_viscosity);
-                    ui.slider(hash!(), "ball count", 1.0..15000.0, &mut num_circles_ui);
-                    ui.slider(hash!(), "ball repel", 1.0..100.0, &mut particle_repel_force);
-                    ui.checkbox(hash!(), "gravity", &mut gravity_enabled);
-                    ui.checkbox(hash!(), "allow phasing", &mut allow_ball_intersection);
-                    ui.checkbox(hash!(), "draw vel.", &mut draw_velocities);
-                    ui.checkbox(hash!(), "boids", &mut boids);
-                    if boids {
-                        ui.slider(hash!(), "sep. amt", 15.0..100.0, &mut separation_distance);
-                        ui.slider(hash!(), "sep. wt.", 0.1..2.0, &mut separation_weight);
-                        ui.slider(hash!(), "align. wt.", 0.1..2.0, &mut alignment_weight);
-                        ui.slider(hash!(), "coh. wt.", 0.1..2.0, &mut cohesion_weight);
+                    ui.slider(hash!(), "drag coef.", 0.0..250.0, &mut config.medium_viscosity);
+                    ui.slider(hash!(), "ball count", 1.0..15000.0, &mut config.num_circles_ui);
+                    ui.slider(hash!(), "ball repel", 1.0..100.0, &mut config.particle_repel_force);
+                    ui.checkbox(hash!(), "gravity", &mut config.gravity_enabled);
+                    ui.checkbox(hash!(), "allow phasing", &mut config.allow_ball_intersection);
+                    ui.checkbox(hash!(), "draw vel.", &mut config.draw_velocities);
+                    ui.slider(hash!(), "speed lim.", 10.0..500.0, &mut config.max_velocity);
+                    ui.checkbox(hash!(), "boids", &mut config.boids);
+                    if config.boids {
+                        ui.slider(hash!(), "box size", 50.0..500.0, &mut config.boids_box_size);
+                        ui.slider(hash!(), "sep. amt", 10.0..100.0, &mut config.separation_distance);
+                        ui.slider(hash!(), "sep. wt.", 0.1..5.0, &mut config.separation_weight);
+                        ui.slider(hash!(), "align. wt.", 0.1..5.0, &mut config.alignment_weight);
+                        ui.slider(hash!(), "coh. wt.", 0.1..5.0, &mut config.cohesion_weight);
+                        ui.slider(hash!(), "boid wt.", 1.0..50.0, &mut config.boid_amount);
+                        ui.slider(hash!(), "avoid wl", 0.01..0.5, &mut config.avoid_walls_weight);
                     }
                 });
         }
