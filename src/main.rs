@@ -8,6 +8,8 @@ use macroquad::ui::widgets::Window;
 use miniquad::window::screen_size;
 use quad_rand::{srand, RandomRange};
 use std::fmt::Write;
+use serde::{Serialize, Deserialize};
+use std::fs;
 
 const DEFAULT_WIDTH: f32 = 1920.0;
 const DEFAULT_HEIGHT: f32 = 1080.0;
@@ -47,6 +49,8 @@ fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, h
         circles.push(circle);
     }
 }
+
+#[derive(Deserialize, Serialize)]
 struct JiggleBallsConfig {
     jiggle: f32,
     mouse_repel_force: f32,
@@ -81,8 +85,9 @@ async fn main() {
     let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
     let mut is_fullscreen = false;
 
+    // the default values for all the configurable stuff
     let mut config = JiggleBallsConfig {
-     jiggle :  3.0,
+     jiggle : 3.0,
      mouse_repel_force : 2.0,
      mouse_attract_force :  0.15,
      mouse_attract_distance :  100.0,
@@ -103,6 +108,18 @@ async fn main() {
      boid_amount : 10.0,
      max_velocity : 50.0,
     };
+
+    match fs::read_to_string("config.toml") {
+        Ok(config_str) => {
+            let loaded_config: JiggleBallsConfig = toml::from_str(config_str.as_str()).map_err(|err| {
+                println!("Could not read config file: {}", err);
+            }).unwrap();
+            config = loaded_config;
+        },
+        Err(err) => {
+            println!("No config file found, using default values (error was: {})", err);
+        }
+    }
 
     let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf")
         .await
@@ -165,6 +182,15 @@ async fn main() {
             set_fullscreen(is_fullscreen);
             // maybe not needed?
             //request_new_screen_size(width, height);
+        }
+
+        if is_key_pressed(KeyCode::S) {
+            let config_str = toml::to_string(&config).map_err(|err| {
+                println!("Could not serialize config: {}", err);
+            }).unwrap();
+            let _ = fs::write("config.toml", config_str.as_str()).map_err(|err| {
+                println!("Could not save config: {}", err);
+            });
         }
 
         if is_key_pressed(KeyCode::G) {

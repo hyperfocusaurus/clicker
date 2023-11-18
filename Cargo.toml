@@ -7,4 +7,7 @@ edition = "2021"
 
 [dependencies]
 macroquad = "0.4.4"
+merge = "0.1.0"
 quad-rand = "0.2.1"
+serde = {version = "1.0.192", features = ["derive"]}
+toml = {version = "0.8.8", features = ["parse", "display"] }
