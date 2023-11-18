@@ -1,16 +1,16 @@
 mod quadtree;
 use crate::quadtree::Quadtree;
-use miniquad::window::screen_size;
-use quad_rand::{RandomRange, srand};
-use macroquad::ui::root_ui;
-use macroquad::ui::widgets::Window;
-use macroquad::prelude::*;
 use macroquad::color::hsl_to_rgb;
 use macroquad::hash;
+use macroquad::prelude::*;
+use macroquad::ui::root_ui;
+use macroquad::ui::widgets::Window;
+use miniquad::window::screen_size;
+use quad_rand::{srand, RandomRange};
 use std::fmt::Write;
 
-const DEFAULT_WIDTH:f32 = 1920.0;
-const DEFAULT_HEIGHT:f32 = 1080.0;
+const DEFAULT_WIDTH: f32 = 1920.0;
+const DEFAULT_HEIGHT: f32 = 1080.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Circle(f32, f32, f32, Color, Vec2);
@@ -25,22 +25,22 @@ fn conf() -> Conf {
         window_width: DEFAULT_WIDTH as i32,
         window_height: DEFAULT_HEIGHT as i32,
         fullscreen: false,
-        ..Default::default() 
+        ..Default::default()
     }
 }
 
 fn gen_circle(width: f32, height: f32) -> Circle {
-        let x = get_random_value(0.0, width);
-        let y = get_random_value(0.0, height);
-        let mut h = get_random_value(0.0, 100.0);
-        h /= 100.0;
-        let color = hsl_to_rgb(h, 0.5, 0.5);
-        let circle_size = get_random_value(5.0, 15.0);
-        let velocity = Vec2::new(0.0, 0.0);
-        Circle(x, y, circle_size, color, velocity)
+    let x = get_random_value(0.0, width);
+    let y = get_random_value(0.0, height);
+    let mut h = get_random_value(0.0, 100.0);
+    h /= 100.0;
+    let color = hsl_to_rgb(h, 0.5, 0.5);
+    let circle_size = get_random_value(5.0, 15.0);
+    let velocity = Vec2::new(0.0, 0.0);
+    Circle(x, y, circle_size, color, velocity)
 }
 
-fn reset_circles (circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, height: f32)  {
+fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, height: f32) {
     circles.clear();
     for _i in 0..num_circles {
         let circle = Box::new(gen_circle(width, height));
@@ -50,24 +50,33 @@ fn reset_circles (circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, 
 
 #[macroquad::main(conf)]
 async fn main() {
-    let mut width:f32 = DEFAULT_WIDTH;
-    let mut height:f32 = DEFAULT_HEIGHT;
+    let mut width: f32 = DEFAULT_WIDTH;
+    let mut height: f32 = DEFAULT_HEIGHT;
     let mut show_gui = false;
 
     let mut circles = Vec::new();
     let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
     let mut is_fullscreen = false;
-    let mut jiggle:f32 = 3.0;
+    let mut jiggle: f32 = 3.0;
     let mut mouse_repel_force = 2.0;
-    let mut mouse_attract_force:f32 = 0.15;
-    let mut mouse_attract_distance:f32 = 100.0;
+    let mut mouse_attract_force: f32 = 0.15;
+    let mut mouse_attract_distance: f32 = 100.0;
     let mut medium_viscosity = 100.0;
     let mut num_circles = 1000;
-    let mut num_circles_ui:f32 = 1000.0;
+    let mut num_circles_ui: f32 = 1000.0;
     let mut gravity_enabled = false;
     let mut particle_repel_force = 30.0;
+    let mut allow_ball_intersection = false;
+    let mut draw_velocities = false;
+    let mut boids = false;
+    let mut separation_distance = 10.0;
+    let mut separation_weight = 0.1;
+    let mut alignment_weight = 0.1;
+    let mut cohesion_weight = 0.1;
 
-    let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf").await.expect("Could not load UI font");
+    let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf")
+        .await
+        .expect("Could not load UI font");
 
     srand(get_time() as u64);
 
@@ -78,10 +87,10 @@ async fn main() {
     }
     let hud_textparams = TextParams {
         font: Some(&ui_font),
-        font_size: 32, 
+        font_size: 32,
         color: BLUE,
         ..Default::default()
-    }; 
+    };
     loop {
         let delta_time = get_frame_time();
 
@@ -139,103 +148,172 @@ async fn main() {
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
         let (mouse_x, mouse_y) = mouse_position();
 
-        circles = circles.iter().map(|circ| {
-            let Circle(x, y, circle_size, color, velocity) = **circ;
-            // draw the circle before doing anything else - everything else is setting up for the
-            // next frame
-            draw_circle(x, y, circle_size, color);
-            let jiggle_x:f32 = get_random_value(-(jiggle), jiggle);
-            let jiggle_y:f32 = get_random_value(-(jiggle), jiggle);
-            let mut new_x = x;
-            let mut new_y = y;
-            let mut new_velocity = velocity.clone();
-
-            if gravity_enabled {
-                new_velocity.y += 98.1;
-            }
-
-            let mut new_pos = vec2(new_x, new_y);
-            new_pos += velocity * delta_time;
-            if velocity.x != 0.0 || velocity.y != 0.0 {
-                new_velocity -= velocity.normalize() * delta_time * medium_viscosity;
-            }
-
-            if new_velocity.x < 0.01 && new_velocity.x > -0.01 {
-                new_velocity.x = 0.0;
-            }
-            if new_velocity.y < 0.01 && new_velocity.y > -0.01 {
-                new_velocity.y = 0.0;
-            }
-                
-
-            new_x = new_pos.x;
-            new_y = new_pos.y;
-
-
-            // collision detection
-            // todo: figure out good values for the search field
-            let query_range = Rect::new(x-50.0, y-50.0, 100.0, 100.0);
-            let results = circles_quadtree.query(query_range);
-            for other in results {
-                if other == *circ {
-                    continue;
+        circles = circles
+            .iter()
+            .map(|circ| {
+                let Circle(mut x, mut y, circle_size, color, velocity) = **circ;
+                // draw the circle before doing anything else - everything else is setting up for the
+                // next frame
+                if !allow_ball_intersection {
+                    let query_range = Rect::new(x - 50.0, y - 50.0, 100.0, 100.0);
+                    let results = circles_quadtree.query(query_range);
+                    for other in results {
+                        if other == *circ {
+                            continue;
+                        }
+                        // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
+                        let Circle(other_x, other_y, other_size, _, _) = *other;
+                        let dist = vec2(other_x, other_y).distance(vec2(x, y));
+                        if dist < (circle_size + other_size) {
+                            let x_dist = other_x - x;
+                            let y_dist = other_y - y;
+                            x -= x_dist / 2.0;
+                            y -= y_dist / 2.0;
+                        }
+                    }
                 }
-                // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
-                let Circle(other_x, other_y, other_size, _, _) = *other;
-                let dist = vec2(other_x, other_y).distance(vec2(x, y));
-                if dist < (circle_size + other_size) {
-                    let x_dist = other_x - x;
-                    let y_dist = other_y - y;
-                    new_velocity -= vec2(x_dist, y_dist).normalize() * dist * delta_time * particle_repel_force;
-                }
-            }
+                draw_circle(x, y, circle_size, color);
+                let jiggle_x: f32 = get_random_value(-(jiggle), jiggle);
+                let jiggle_y: f32 = get_random_value(-(jiggle), jiggle);
+                let mut new_x = x;
+                let mut new_y = y;
+                let mut new_velocity = velocity.clone();
 
-            // disable the mouse interaction while the gui is on screen
-            if !show_gui {
-                let mut mouse_gravity = 0.0;
-                let mut mouse_distance = mouse_attract_distance;
-                if is_mouse_button_down(MouseButton::Left) {
-                    mouse_gravity = -mouse_attract_force;
-                    mouse_distance *= 3.0;
-                } else if is_mouse_button_down(MouseButton::Right) {
-                    mouse_gravity = mouse_repel_force;
+                if gravity_enabled {
+                    new_velocity.y += 9.81;
                 }
-                let mouse_x_dist = x - mouse_x;
-                let mouse_y_dist = y - mouse_y;
-                let mouse_dist = ((mouse_x_dist.powi(2) + mouse_y_dist.powi(2)) as f32).sqrt();
-                if mouse_dist < mouse_distance {
-                    new_velocity += Vec2::new(mouse_x_dist as f32, mouse_y_dist as f32) * mouse_gravity;
+
+                let mut new_pos = vec2(new_x, new_y);
+                new_pos += velocity * delta_time;
+                if velocity.x != 0.0 || velocity.y != 0.0 {
+                    new_velocity -= velocity.normalize() * delta_time * medium_viscosity;
                 }
-            }
 
-            new_x += jiggle_x;
-            if new_x >= width - circle_size || new_x <= circle_size {
-                new_velocity.x = -(new_velocity.x / 2.0);
-            }
+                if new_velocity.x < 0.01 && new_velocity.x > -0.01 {
+                    new_velocity.x = 0.0;
+                }
+                if new_velocity.y < 0.01 && new_velocity.y > -0.01 {
+                    new_velocity.y = 0.0;
+                }
+                if draw_velocities {
+                    let Vec2{x: next_x, y: next_y} = vec2(x, y) + new_velocity;
+                    draw_line(x, y, next_x, next_y, 1.0, RED);
+                }
 
-            new_y += jiggle_y;
-            if new_y >= height - circle_size || new_y <= circle_size {
-                new_velocity.y = -(new_velocity.y / 2.0);
-            }
-                
-            new_x = new_x.clamp(circle_size, width - circle_size);
-            new_y = new_y.clamp(circle_size, height - circle_size);
-            let new_circ = Box::new(Circle(
-                new_x,
-                new_y,
-                circle_size,
-                color,
-                new_velocity,
-            ));
-            circles_quadtree.replace(circ.clone(), new_circ.clone());
-            new_circ
-        }).collect();
+                if boids {
+                    let query_range = Rect::new(x - 50.0, y - 50.0, 100.0, 100.0);
+                    let results = circles_quadtree.query(query_range);
+                    if results.len() > 0 {
+                        let mut separation = Vec2::default();
+                        let mut alignment = Vec2::default();
+                        let mut cohesion = Vec2::default();
+
+                        for other in &results {
+                            if *other == *circ {
+                                continue; // Skip self
+                            }
+
+                            let Circle(other_x, other_y, _, _, _) = **other;
+                            let to_other = vec2(other_x, other_y) - vec2(x, y);
+
+                            // Separation: Move away from close neighbors
+                            if to_other.length() < separation_distance {
+                                separation -= to_other.normalize();
+                            }
+
+                            // Alignment: Align with the average velocity of neighbors
+                            alignment += (*other).1;
+
+                            // Cohesion: Move towards the average position of neighbors
+                            cohesion += vec2(other_x, other_y);
+                        }
+
+                        if results.len() > 1 {
+                            alignment /= (results.len() - 1) as f32; // Exclude self from alignment calculation
+                            cohesion /= (results.len() - 1) as f32; // Exclude self from cohesion calculation
+
+                            separation *= separation_weight;
+                            alignment *= alignment_weight;
+                            cohesion = (cohesion - vec2(x, y)).normalize() * cohesion_weight;
+
+                            new_velocity += separation + alignment + cohesion;
+                        }
+                    }
+                }
+
+                new_x = new_pos.x;
+                new_y = new_pos.y;
+
+                // collision detection
+                // todo: figure out good values for the search field
+                let query_range = Rect::new(x - 10.0, y - 10.0, 20.0, 20.0);
+                let results = circles_quadtree.query(query_range);
+                for other in results {
+                    if other == *circ {
+                        continue;
+                    }
+                    // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
+                    let Circle(other_x, other_y, other_size, _, _) = *other;
+                    let dist = vec2(other_x, other_y).distance(vec2(x, y));
+                    if dist < (circle_size + other_size) {
+                        let x_dist = other_x - x;
+                        let y_dist = other_y - y;
+                        new_velocity -= vec2(x_dist, y_dist).normalize()
+                            * dist
+                            * delta_time
+                            * particle_repel_force;
+                    }
+                }
+
+                // disable the mouse interaction while the gui is on screen
+                if !show_gui {
+                    let mut mouse_gravity = 0.0;
+                    let mut mouse_distance = mouse_attract_distance;
+                    if is_mouse_button_down(MouseButton::Left) {
+                        mouse_gravity = -mouse_attract_force;
+                        mouse_distance *= 3.0;
+                    } else if is_mouse_button_down(MouseButton::Right) {
+                        mouse_gravity = mouse_repel_force;
+                    }
+                    let mouse_x_dist = x - mouse_x;
+                    let mouse_y_dist = y - mouse_y;
+                    let mouse_dist = ((mouse_x_dist.powi(2) + mouse_y_dist.powi(2)) as f32).sqrt();
+                    if mouse_dist < mouse_distance {
+                        new_velocity +=
+                            Vec2::new(mouse_x_dist as f32, mouse_y_dist as f32) * mouse_gravity;
+                    }
+                }
+
+                new_x += jiggle_x;
+                if new_x >= width - circle_size || new_x <= circle_size {
+                    new_velocity.x = -(new_velocity.x / 2.0);
+                }
+
+                new_y += jiggle_y;
+                if new_y >= height - circle_size || new_y <= circle_size {
+                    new_velocity.y = -(new_velocity.y / 2.0);
+                }
+
+                new_x = new_x.clamp(circle_size, width - circle_size);
+                new_y = new_y.clamp(circle_size, height - circle_size);
+                let new_circ = Box::new(Circle(new_x, new_y, circle_size, color, new_velocity));
+                circles_quadtree.replace(circ.clone(), new_circ.clone());
+                new_circ
+            })
+            .collect();
+
+        circles.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
         draw_circle(mouse_x, mouse_y, 30.0, BLUE);
 
-
         // -- gui layer
-        draw_rectangle(0.0, 0.0, 200.0, 80.0, Color::from_rgba(0x00, 0xFF, 0xFF, 0xA0));
+        draw_rectangle(
+            0.0,
+            0.0,
+            200.0,
+            80.0,
+            Color::from_rgba(0x00, 0xFF, 0xFF, 0xA0),
+        );
         let mut s = String::new();
         write!(s, "Jiggle: {jiggle}").unwrap();
         draw_text_ex(s.as_str(), 0.0, 32.0, hud_textparams.clone());
@@ -246,57 +324,36 @@ async fn main() {
         draw_text_ex(s.as_str(), 0.0, 64.0, hud_textparams.clone());
 
         if show_gui {
-            Window::new(hash!(), vec2(width - 620., 20.), vec2(420., 200.))
+            let mut window_height = 300.0;
+            if boids {
+                window_height += 100.0;
+            }
+            Window::new(hash!(), vec2(width - 620., 20.), vec2(420., window_height))
                 .label("Controls")
                 .close_button(false)
                 .ui(&mut root_ui(), |ui| {
-                    ui.slider(
-                        hash!(),
-                        "Jiggle",
-                        0.0 .. 100.0,
-                        &mut jiggle,
-                    );
-                    ui.slider(
-                        hash!(),
-                        "push force",
-                        1.0 .. 15.0,
-                        &mut mouse_repel_force,
-                    );
-                    ui.slider(
-                        hash!(),
-                        "pull force",
-                        0.05 .. 1.0,
-                        &mut mouse_attract_force,
-                    );
+                    ui.slider(hash!(), "Jiggle", 0.0..100.0, &mut jiggle);
+                    ui.slider(hash!(), "push force", 1.0..15.0, &mut mouse_repel_force);
+                    ui.slider(hash!(), "pull force", 0.05..1.0, &mut mouse_attract_force);
                     ui.slider(
                         hash!(),
                         "pull dist.",
-                        1.0 .. 500.0,
+                        1.0..500.0,
                         &mut mouse_attract_distance,
                     );
-                    ui.slider(
-                        hash!(),
-                        "drag coef.",
-                        0.0 .. 250.0,
-                        &mut medium_viscosity,
-                    );
-                    ui.slider(
-                        hash!(),
-                        "ball count",
-                        1.0 .. 15000.0,
-                        &mut num_circles_ui,
-                    );
-                    ui.slider(
-                        hash!(),
-                        "ball repel",
-                        1.0 .. 100.0,
-                        &mut particle_repel_force,
-                    );
-                    ui.checkbox(
-                        hash!(),
-                        "gravity",
-                        &mut gravity_enabled,
-                    );
+                    ui.slider(hash!(), "drag coef.", 0.0..250.0, &mut medium_viscosity);
+                    ui.slider(hash!(), "ball count", 1.0..15000.0, &mut num_circles_ui);
+                    ui.slider(hash!(), "ball repel", 1.0..100.0, &mut particle_repel_force);
+                    ui.checkbox(hash!(), "gravity", &mut gravity_enabled);
+                    ui.checkbox(hash!(), "allow phasing", &mut allow_ball_intersection);
+                    ui.checkbox(hash!(), "draw vel.", &mut draw_velocities);
+                    ui.checkbox(hash!(), "boids", &mut boids);
+                    if boids {
+                        ui.slider(hash!(), "sep. amt", 15.0..100.0, &mut separation_distance);
+                        ui.slider(hash!(), "sep. wt.", 0.1..2.0, &mut separation_weight);
+                        ui.slider(hash!(), "align. wt.", 0.1..2.0, &mut alignment_weight);
+                        ui.slider(hash!(), "coh. wt.", 0.1..2.0, &mut cohesion_weight);
+                    }
                 });
         }
 
