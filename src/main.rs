@@ -388,7 +388,7 @@ async fn main() {
 
         circles.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 
-        draw_circle(mouse_x, mouse_y, 30.0, BLUE);
+        draw_circle(mouse_x, mouse_y, 5.0, BLUE);
 
         // -- gui layer
         if show_debug_gui {
