@@ -1,3 +1,5 @@
+mod quadtree;
+use crate::quadtree::Quadtree;
 use miniquad::window::screen_size;
 use quad_rand::{RandomRange, srand};
 use macroquad::ui::root_ui;
@@ -7,9 +9,11 @@ use macroquad::color::hsl_to_rgb;
 use macroquad::hash;
 use std::fmt::Write;
 
-
 const DEFAULT_WIDTH:f32 = 1920.0;
 const DEFAULT_HEIGHT:f32 = 1080.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Circle(f32, f32, f32, Color, Vec2);
 
 fn get_random_value<T: RandomRange>(min: T, max: T) -> T {
     T::gen_range(min, max)
@@ -25,7 +29,7 @@ fn conf() -> Conf {
     }
 }
 
-fn gen_circle(circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, width: f32, height: f32) {
+fn gen_circle(width: f32, height: f32) -> Circle {
         let x = get_random_value(0.0, width);
         let y = get_random_value(0.0, height);
         let mut h = get_random_value(0.0, 100.0);
@@ -33,13 +37,14 @@ fn gen_circle(circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, width: f32, heigh
         let color = hsl_to_rgb(h, 0.5, 0.5);
         let circle_size = get_random_value(5.0, 15.0);
         let velocity = Vec2::new(0.0, 0.0);
-        circles.push((x, y, circle_size, color, velocity));
+        Circle(x, y, circle_size, color, velocity)
 }
 
-fn reset_circles (circles: &mut Vec<(f32, f32, f32, Color, Vec2)>, num_circles: u32, width: f32, height: f32)  {
+fn reset_circles (circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, height: f32)  {
     circles.clear();
     for _i in 0..num_circles {
-        gen_circle(circles, width, height);
+        let circle = Box::new(gen_circle(width, height));
+        circles.push(circle);
     }
 }
 
@@ -50,6 +55,7 @@ async fn main() {
     let mut show_gui = false;
 
     let mut circles = Vec::new();
+    let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
     let mut is_fullscreen = false;
     let mut jiggle:f32 = 3.0;
     let mut mouse_repel_force = 2.0;
@@ -59,13 +65,17 @@ async fn main() {
     let mut num_circles = 1000;
     let mut num_circles_ui:f32 = 1000.0;
     let mut gravity_enabled = false;
-    let mut particle_repel_force = 10.0;
+    let mut particle_repel_force = 30.0;
 
     let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf").await.expect("Could not load UI font");
 
     srand(get_time() as u64);
 
     reset_circles(&mut circles, num_circles, width, height);
+    circles_quadtree.clear();
+    for circ in circles.clone() {
+        circles_quadtree.insert(circ.clone());
+    }
     let hud_textparams = TextParams {
         font: Some(&ui_font),
         font_size: 32, 
@@ -80,11 +90,14 @@ async fn main() {
 
         if circles.len() < num_circles.try_into().unwrap() {
             for _ in 1..num_circles - circles.len() as u32 {
-                gen_circle(&mut circles, width, height);
+                let circle = Box::new(gen_circle(width, height));
+                circles_quadtree.insert(circle.clone());
+                circles.push(circle);
             }
         } else if circles.len() > num_circles.try_into().unwrap() {
             circles.drain((num_circles as usize)..);
         }
+
         // truncate some of the floats that deal with pixel values so they're more realistic
         jiggle = jiggle.trunc();
         mouse_attract_distance = mouse_attract_distance.trunc();
@@ -127,14 +140,14 @@ async fn main() {
         let (mouse_x, mouse_y) = mouse_position();
 
         circles = circles.iter().map(|circ| {
-            let (x, y, circle_size, color, velocity) = circ;
+            let Circle(x, y, circle_size, color, velocity) = **circ;
             // draw the circle before doing anything else - everything else is setting up for the
             // next frame
-            draw_circle(*x, *y, *circle_size, *color);
+            draw_circle(x, y, circle_size, color);
             let jiggle_x:f32 = get_random_value(-(jiggle), jiggle);
             let jiggle_y:f32 = get_random_value(-(jiggle), jiggle);
-            let mut new_x = *x;
-            let mut new_y = *y;
+            let mut new_x = x;
+            let mut new_y = y;
             let mut new_velocity = velocity.clone();
 
             if gravity_enabled {
@@ -142,7 +155,7 @@ async fn main() {
             }
 
             let mut new_pos = vec2(new_x, new_y);
-            new_pos += *velocity * delta_time;
+            new_pos += velocity * delta_time;
             if velocity.x != 0.0 || velocity.y != 0.0 {
                 new_velocity -= velocity.normalize() * delta_time * medium_viscosity;
             }
@@ -160,17 +173,20 @@ async fn main() {
 
 
             // collision detection
-            for other in &circles[..] {
-                if other == circ {
+            // todo: figure out good values for the search field
+            let query_range = Rect::new(x-50.0, y-50.0, 100.0, 100.0);
+            let results = circles_quadtree.query(query_range);
+            for other in results {
+                if other == *circ {
                     continue;
                 }
                 // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
-                let (other_x, other_y, other_size, _, _) = other;
-                let dist = vec2(*other_x, *other_y).distance_squared(vec2(*x, *y));
-                if dist < (*circle_size + other_size)*(*circle_size + other_size) {
-                    let x_dist = *other_x - *x;
-                    let y_dist = *other_y - *y;
-                    new_velocity -= vec2(x_dist, y_dist).normalize() * dist.sqrt() * delta_time * particle_repel_force;
+                let Circle(other_x, other_y, other_size, _, _) = *other;
+                let dist = vec2(other_x, other_y).distance(vec2(x, y));
+                if dist < (circle_size + other_size) {
+                    let x_dist = other_x - x;
+                    let y_dist = other_y - y;
+                    new_velocity -= vec2(x_dist, y_dist).normalize() * dist * delta_time * particle_repel_force;
                 }
             }
 
@@ -184,8 +200,8 @@ async fn main() {
                 } else if is_mouse_button_down(MouseButton::Right) {
                     mouse_gravity = mouse_repel_force;
                 }
-                let mouse_x_dist = *x - mouse_x;
-                let mouse_y_dist = *y - mouse_y;
+                let mouse_x_dist = x - mouse_x;
+                let mouse_y_dist = y - mouse_y;
                 let mouse_dist = ((mouse_x_dist.powi(2) + mouse_y_dist.powi(2)) as f32).sqrt();
                 if mouse_dist < mouse_distance {
                     new_velocity += Vec2::new(mouse_x_dist as f32, mouse_y_dist as f32) * mouse_gravity;
@@ -193,20 +209,26 @@ async fn main() {
             }
 
             new_x += jiggle_x;
-            if new_x >= width - *circle_size || new_x <= *circle_size {
+            if new_x >= width - circle_size || new_x <= circle_size {
                 new_velocity.x = -(new_velocity.x / 2.0);
             }
 
             new_y += jiggle_y;
-            if new_y >= height - *circle_size || new_y <= *circle_size {
+            if new_y >= height - circle_size || new_y <= circle_size {
                 new_velocity.y = -(new_velocity.y / 2.0);
             }
                 
-            (new_x.clamp(*circle_size, width - *circle_size), 
-             new_y.clamp(*circle_size, height - *circle_size),
-             *circle_size,
-             *color,
-             new_velocity)
+            new_x = new_x.clamp(circle_size, width - circle_size);
+            new_y = new_y.clamp(circle_size, height - circle_size);
+            let new_circ = Box::new(Circle(
+                new_x,
+                new_y,
+                circle_size,
+                color,
+                new_velocity,
+            ));
+            circles_quadtree.replace(circ.clone(), new_circ.clone());
+            new_circ
         }).collect();
 
         draw_circle(mouse_x, mouse_y, 30.0, BLUE);
@@ -261,7 +283,7 @@ async fn main() {
                     ui.slider(
                         hash!(),
                         "ball count",
-                        1.0 .. 3000.0,
+                        1.0 .. 15000.0,
                         &mut num_circles_ui,
                     );
                     ui.slider(
