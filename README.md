@@ -1,5 +1,8 @@
 # Jiggle Balls
 
+![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/hyperfocusaurus/jiggleballs/rust.yml)
+![GitHub Release Date - Published_At](https://img.shields.io/github/release-date/hyperfocusaurus/jiggleballs)
+
 Yes, I know, it's a bit of a silly name.  Don't think too much about it.
 
 This is a very small, simple, fast ball pit simulator with some simple controls.
