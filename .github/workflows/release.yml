@@ -12,6 +12,7 @@ jobs:
   tag_and_release:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - name: Check version matches toml
         run: |
           VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml)
