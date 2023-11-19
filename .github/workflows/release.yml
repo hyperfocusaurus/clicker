@@ -32,7 +32,7 @@ jobs:
           tar czf Linux-x86_64.tar.gz release/linux/
       - name: Create release
         id: create_release
-        uses: jasondavis303/tag-and-release-and-upload@v1.2.0
+        uses: dothq/tag-and-release-and-upload@v1.0.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: v${{ github.events.inputs.version }}
