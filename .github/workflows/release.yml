@@ -35,7 +35,7 @@ jobs:
         uses: dothq/tag-and-release-and-upload@v1.0.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          version: v${{ github.events.inputs.version }}
+          version: v${{ github.event.inputs.version }}
           assets: '[ "Linux-x86_64.tar.gz" ]'
           overwrite: false # set to true if you need to replace a release's assets for some reason
 
