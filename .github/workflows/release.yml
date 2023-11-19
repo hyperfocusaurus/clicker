@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to tag and release as (should match Cargo.toml)
+        required: true
+        type: string
+
+jobs:
+  tag_and_release:
+    steps:
+      - name: Check version matches toml
+        run: |
+          VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml)
+          if [ "$VERSION" != "${{ github.event.inputs.version }}" ]; then
+            echo "Error: Version in Cargo.toml ($VERSION) does not match input version (${{ github.event.inputs.version }})"
+            exit 1
+          fi
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+      - name: Build
+        run: |
+          cargo build --release
+      - name: Package
+        run: |
+          mkdir -p release
+          cp target/release/jiggleballs release/
+          cp config.toml release/
+          cp OfficeCodePro-Regular.ttf release/
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          release_name: Release ${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+      - name: Upload binaries
+        id: upload_binaries
+        uses: actions/upload-artifact@v2
+        with:
+          name: binaries
+          path: release/
+        if: success()
+
