@@ -32,11 +32,10 @@ jobs:
           tar czf Linux-x86_64.tar.gz release/linux/
       - name: Create release
         id: create_release
-        uses: dothq/tag-and-release-and-upload@v1.0.2
+        uses: nougatchi/tag-and-release-and-upload@v1.2.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: v${{ github.event.inputs.version }}
-          body_path: release-body.md
           assets: '[ "Linux-x86_64.tar.gz" ]'
           overwrite: false # set to true if you need to replace a release's assets for some reason
 
