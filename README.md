@@ -17,6 +17,7 @@ No runtime dependencies.  100% pure Rust at the application level.
 
 # Control Scheme
 
+```
 Left Click: Sucks balls towards the mouse cursor
 Right Click: Repels balls away from the mouse cursor
 
@@ -28,3 +29,4 @@ s: Save settings from GUI controls
 r: Reset the ball field
 f: Toggle fullscreen (note: may not work to turn fullscreen mode *off* due to a known issue)
 q: Quit
+```
