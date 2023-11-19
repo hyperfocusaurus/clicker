@@ -1,7 +1,9 @@
 # Jiggle Balls
 
 ![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/hyperfocusaurus/jiggleballs/rust.yml)
+[
 ![GitHub Release Date - Published_At](https://img.shields.io/github/release-date/hyperfocusaurus/jiggleballs?link=https%3A%2F%2Fgithub.com%2Fhyperfocusaurus%2Fjiggleballs%2Freleases%2Flatest&link=https%3A%2F%2Fgithub.com%2Fhyperfocusaurus%2Fjiggleballs%2Freleases%2Flatest)
+](https://github.com/hyperfocusaurus/jiggleballs/releases/latest)
 
 Yes, I know, it's a bit of a silly name.  Don't think too much about it.
 
