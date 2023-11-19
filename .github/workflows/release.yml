@@ -19,8 +19,6 @@ jobs:
             echo "Error: Version in Cargo.toml ($VERSION) does not match input version (${{ github.event.inputs.version }})"
             exit 1
           fi
-      - name: Set up Rust
-        uses: actions/setup-rust@v1
       - name: Build
         run: |
           cargo build --release
