@@ -20,23 +20,25 @@ jobs:
             echo "Error: Version in Cargo.toml ($VERSION) does not match input version (${{ github.event.inputs.version }})"
             exit 1
           fi
-      - name: Build
+      - name: Build for Linux
         run: |
           cargo build --release
-      - name: Package
+      - name: Package for Linux
         run: |
-          mkdir -p release
-          cp target/release/jiggleballs release/
-          cp config.toml release/
-          cp OfficeCodePro-Regular.ttf release/
+          mkdir -p release/linux
+          cp target/release/jiggleballs release/linux
+          cp config.toml release/linux
+          cp OfficeCodePro-Regular.ttf release/linux
       - name: Create release
         id: create_release
-        uses: actions/create-release@v1
+        uses: avakar/tag-and-release@v1
         with:
           tag_name: v${{ github.event.inputs.version }}
           release_name: Release ${{ github.event.inputs.version }}
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload binaries
         id: upload_binaries
         uses: actions/upload-artifact@v2
