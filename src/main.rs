@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 mod quadtree;
 use crate::quadtree::Quadtree;
 use macroquad::color::hsl_to_rgb;
