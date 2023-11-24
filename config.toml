@@ -1,4 +1,4 @@
-is_fullscreen = true
+is_fullscreen = false
 jiggle = 3.0
 mouse_repel_force = 2.0
 mouse_attract_force = 0.15000000596046448

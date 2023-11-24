@@ -17,6 +17,7 @@ impl QuadtreeNode {
         }
     }
 
+
     fn subdivide(&mut self) {
         let (x, y, w, h) = (
             self.bounds.x,
@@ -117,6 +118,10 @@ impl Quadtree {
         }
     }
 
+    pub fn get_bounds(&self) -> Rect {
+        self.bounds
+    }
+
     pub fn insert(&mut self, circle: Box<Circle>) {
         self.root.insert(circle);
     }
@@ -131,7 +136,8 @@ impl Quadtree {
         self.root.query(range, &mut results);
         results
     }
-    pub fn clear(&mut self) {
-        self.root = QuadtreeNode::new(self.bounds);
+    pub fn clear(&mut self, bounds: Rect) {
+        self.bounds = bounds;
+        self.root = QuadtreeNode::new(bounds);
     }
 }

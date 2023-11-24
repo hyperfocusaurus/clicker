@@ -1,6 +1,9 @@
 #![windows_subsystem = "windows"]
 mod quadtree;
 use crate::quadtree::Quadtree;
+use futures::executor;
+use hound::WavSpec;
+use macroquad::audio::{load_sound_from_bytes, play_sound_once};
 use macroquad::color::hsl_to_rgb;
 use macroquad::hash;
 use macroquad::prelude::*;
@@ -8,9 +11,11 @@ use macroquad::ui::root_ui;
 use macroquad::ui::widgets::Window;
 use miniquad::window::screen_size;
 use quad_rand::{srand, RandomRange};
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
-use serde::{Serialize, Deserialize};
 use std::fs;
+use std::io::{BufWriter, Cursor};
+use merge::Merge;
 
 const DEFAULT_WIDTH: f32 = 1920.0;
 const DEFAULT_HEIGHT: f32 = 1080.0;
@@ -20,6 +25,20 @@ struct Circle(f32, f32, f32, Color, Vec2);
 
 fn get_random_value<T: RandomRange>(min: T, max: T) -> T {
     T::gen_range(min, max)
+}
+
+fn bounding_box(width: f32, height: f32) -> Rect {
+    Rect::new(0.0, 0.0, width, height)
+}
+
+fn beep(beep_note: f32, beep_duration: f32) {
+    let beep_freq = 440.0 * 2.0f32.powf(beep_note / 12.0);
+    let mut sound = gen_sine_wave(beep_freq, 44100, beep_duration);
+    attenuate(&mut sound, 0.05);
+    // convert the raw sound data into a .wav equivalent series of bytes for macroquad to play
+    let sound_wave = raw_to_wave(&sound, 1);
+    let sound = executor::block_on(load_sound_from_bytes(sound_wave.as_slice())).unwrap();
+    play_sound_once(&sound);
 }
 
 fn conf() -> Conf {
@@ -51,29 +70,64 @@ fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, h
     }
 }
 
-#[derive(Deserialize, Serialize)]
+fn raw_to_wave(raw: &[f32], channels: u16) -> Vec<u8> {
+    let spec = WavSpec {
+        channels,
+        sample_rate: 44100,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut buf = Vec::new();
+    let mut writer = hound::WavWriter::new(BufWriter::new(Cursor::new(&mut buf)), spec).unwrap();
+    for sample in raw {
+        writer.write_sample(*sample).unwrap();
+    }
+    writer.finalize().unwrap();
+    buf
+}
+
+fn attenuate(sound: &mut [f32], attenuation: f32) {
+    for sample in sound {
+        *sample *= attenuation;
+    }
+}
+
+// generate a sine wave for playback through macroquad's audio system
+fn gen_sine_wave(freq: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
+    let mut samples = Vec::new();
+    let mut t = 0.0;
+    while t < duration {
+        let sample = (t * freq * 2.0 * std::f32::consts::PI).sin();
+        samples.push(sample);
+        t += 1.0 / sample_rate as f32;
+    }
+    samples
+}
+
+#[derive(Deserialize, Serialize, Clone, Merge)]
 struct JiggleBallsConfig {
-    is_fullscreen: bool,
-    jiggle: f32,
-    mouse_repel_force: f32,
-    mouse_attract_force: f32,
-    mouse_attract_distance: f32,
-    medium_viscosity: f32,
-    num_circles: u32,
-    num_circles_ui: f32,
-    gravity_enabled: bool,
-    particle_repel_force: f32,
-    allow_ball_intersection: bool,
-    draw_velocities: bool,
-    boids: bool,
-    boids_box_size: f32,
-    separation_distance: f32,
-    separation_weight: f32,
-    alignment_weight: f32,
-    cohesion_weight: f32,
-    avoid_walls_weight: f32,
-    boid_amount: f32,
-    max_velocity: f32,
+    audio_enabled: Option<bool>,
+    is_fullscreen: Option<bool>,
+    jiggle: Option<f32>,
+    mouse_repel_force: Option<f32>,
+    mouse_attract_force: Option<f32>,
+    mouse_attract_distance: Option<f32>,
+    medium_viscosity: Option<f32>,
+    num_circles: Option<u32>,
+    num_circles_ui: Option<f32>,
+    gravity_enabled: Option<bool>,
+    particle_repel_force: Option<f32>,
+    allow_ball_intersection: Option<bool>,
+    draw_velocities: Option<bool>,
+    boids: Option<bool>,
+    boids_box_size: Option<f32>,
+    separation_distance: Option<f32>,
+    separation_weight: Option<f32>,
+    alignment_weight: Option<f32>,
+    cohesion_weight: Option<f32>,
+    avoid_walls_weight: Option<f32>,
+    boid_amount: Option<f32>,
+    max_velocity: Option<f32>,
 }
 
 #[macroquad::main(conf)]
@@ -88,38 +142,44 @@ async fn main() {
 
     // the default values for all the configurable stuff
     let mut config = JiggleBallsConfig {
-     is_fullscreen : false,
-     jiggle : 3.0,
-     mouse_repel_force : 2.0,
-     mouse_attract_force :  0.15,
-     mouse_attract_distance :  100.0,
-     medium_viscosity : 100.0,
-     num_circles : 1000,
-     num_circles_ui :  1000.0,
-     gravity_enabled : false,
-     particle_repel_force : 30.0,
-     allow_ball_intersection : false,
-     draw_velocities : false,
-     boids : false,
-     boids_box_size : 10.0,
-     separation_distance : 10.0,
-     separation_weight : 1.0,
-     alignment_weight : 1.0,
-     cohesion_weight : 1.0,
-     avoid_walls_weight : 0.01,
-     boid_amount : 10.0,
-     max_velocity : 50.0,
+        audio_enabled: Some(true),
+        is_fullscreen: Some(false),
+        jiggle: Some(3.0),
+        mouse_repel_force: Some(2.0),
+        mouse_attract_force: Some(0.15),
+        mouse_attract_distance: Some(100.0),
+        medium_viscosity: Some(100.0),
+        num_circles: Some(1000),
+        num_circles_ui: Some(1000.0),
+        gravity_enabled: Some(false),
+        particle_repel_force: Some(30.0),
+        allow_ball_intersection: Some(false),
+        draw_velocities: Some(false),
+        boids: Some(false),
+        boids_box_size: Some(10.0),
+        separation_distance: Some(10.0),
+        separation_weight: Some(1.0),
+        alignment_weight: Some(1.0),
+        cohesion_weight: Some(1.0),
+        avoid_walls_weight: Some(0.01),
+        boid_amount: Some(10.0),
+        max_velocity: Some(50.0),
     };
 
     match fs::read_to_string("config.toml") {
         Ok(config_str) => {
-            let loaded_config: JiggleBallsConfig = toml::from_str(config_str.as_str()).map_err(|err| {
-                println!("Could not read config file: {}", err);
-            }).unwrap();
-            config = loaded_config;
-        },
+            let loaded_config: JiggleBallsConfig = toml::from_str(config_str.as_str())
+                .map_err(|err| {
+                    println!("Could not read config file: {}", err);
+                })
+                .unwrap();
+            config.merge(loaded_config);
+        }
         Err(err) => {
-            println!("No config file found, using default values (error was: {})", err);
+            println!(
+                "No config file found, using default values (error was: {})",
+                err
+            );
         }
     }
 
@@ -129,8 +189,13 @@ async fn main() {
 
     srand(get_time() as u64);
 
+    set_fullscreen(config.is_fullscreen);
+    if config.is_fullscreen {
+        (width, height) = screen_size();
+        request_new_screen_size(width, height);
+    }
     reset_circles(&mut circles, config.num_circles, width, height);
-    circles_quadtree.clear();
+    circles_quadtree.clear(bounding_box(width, height));
     for circ in circles.clone() {
         circles_quadtree.insert(circ.clone());
     }
@@ -140,10 +205,8 @@ async fn main() {
         color: BLUE,
         ..Default::default()
     };
-    set_fullscreen(config.is_fullscreen);
     loop {
         let delta_time = get_frame_time();
-
         config.num_circles_ui = config.num_circles_ui.floor();
         config.num_circles = config.num_circles_ui as u32;
 
@@ -184,13 +247,15 @@ async fn main() {
             config.is_fullscreen = !config.is_fullscreen;
             set_fullscreen(config.is_fullscreen);
             // maybe not needed?
-            //request_new_screen_size(width, height);
+            request_new_screen_size(width, height);
         }
 
         if is_key_pressed(KeyCode::S) {
-            let config_str = toml::to_string(&config).map_err(|err| {
-                println!("Could not serialize config: {}", err);
-            }).unwrap();
+            let config_str = toml::to_string(&config)
+                .map_err(|err| {
+                    println!("Could not serialize config: {}", err);
+                })
+                .unwrap();
             let _ = fs::write("config.toml", config_str.as_str()).map_err(|err| {
                 println!("Could not save config: {}", err);
             });
@@ -206,7 +271,7 @@ async fn main() {
 
         if is_key_pressed(KeyCode::R) {
             reset_circles(&mut circles, config.num_circles, width, height);
-            circles_quadtree.clear();
+            circles_quadtree.clear(bounding_box(width, height));
             for circ in circles.clone() {
                 circles_quadtree.insert(circ.clone());
             }
@@ -312,12 +377,13 @@ async fn main() {
                         }
                         let mut avoid_walls = vec2(width / 2.0, height / 2.0) - vec2(x, y);
                         avoid_walls *= config.avoid_walls_weight;
-                        separation  *= config.separation_weight;
-                        alignment   *= config.alignment_weight;
+                        separation *= config.separation_weight;
+                        alignment *= config.alignment_weight;
                         cohesion = (cohesion - vec2(x, y)).normalize() * config.cohesion_weight;
 
-                        new_velocity +=
-                            (separation + alignment + cohesion + avoid_walls) * delta_time * config.boid_amount;
+                        new_velocity += (separation + alignment + cohesion + avoid_walls)
+                            * delta_time
+                            * config.boid_amount;
                     }
                 }
 
@@ -371,12 +437,30 @@ async fn main() {
 
                 new_velocity.x += jiggle_x;
                 if new_x >= width - circle_size || new_x <= circle_size {
+                    let beep_tone = get_random_value(1.0, 8.0);
+                    beep(beep_tone, 0.05);
                     new_velocity.x = -(new_velocity.x / 2.0);
                 }
 
                 new_velocity.y += jiggle_y;
                 if new_y >= height - circle_size || new_y <= circle_size {
+                    let beep_tone = get_random_value(1.0, 8.0);
+                    beep(beep_tone, 0.05);
                     new_velocity.y = -(new_velocity.y / 2.0);
+                }
+
+                // make the walls actively "push" circles away
+                if new_y >= height - circle_size {
+                    new_velocity.y -= 1.0;
+                }
+                if new_x >= width - circle_size {
+                    new_velocity.x -= 1.0;
+                }
+                if new_y <= circle_size {
+                    new_velocity.y += 1.0;
+                }
+                if new_x <= circle_size {
+                    new_velocity.x += 1.0;
                 }
 
                 new_x = new_x.clamp(circle_size, width - circle_size);
@@ -408,6 +492,15 @@ async fn main() {
             s.clear();
             write!(s, "FPS: {fps}").unwrap();
             draw_text_ex(s.as_str(), 0.0, 64.0, hud_textparams.clone());
+            let quadtree_bounds = circles_quadtree.get_bounds();
+            draw_rectangle_lines(
+                quadtree_bounds.x,
+                quadtree_bounds.y,
+                quadtree_bounds.w,
+                quadtree_bounds.h,
+                1.0,
+                RED,
+            );
         }
 
         if show_gui {
@@ -420,30 +513,74 @@ async fn main() {
                 .close_button(false)
                 .ui(&mut root_ui(), |ui| {
                     ui.slider(hash!(), "Jiggle", 0.0..100.0, &mut config.jiggle);
-                    ui.slider(hash!(), "push force", 1.0..15.0, &mut config.mouse_repel_force);
-                    ui.slider(hash!(), "pull force", 0.05..1.0, &mut config.mouse_attract_force);
+                    ui.slider(
+                        hash!(),
+                        "push force",
+                        1.0..15.0,
+                        &mut config.mouse_repel_force,
+                    );
+                    ui.slider(
+                        hash!(),
+                        "pull force",
+                        0.05..1.0,
+                        &mut config.mouse_attract_force,
+                    );
                     ui.slider(
                         hash!(),
                         "pull dist.",
                         1.0..500.0,
                         &mut config.mouse_attract_distance,
                     );
-                    ui.slider(hash!(), "drag coef.", 0.0..250.0, &mut config.medium_viscosity);
-                    ui.slider(hash!(), "ball count", 1.0..15000.0, &mut config.num_circles_ui);
-                    ui.slider(hash!(), "ball repel", 1.0..100.0, &mut config.particle_repel_force);
+                    ui.slider(
+                        hash!(),
+                        "drag coef.",
+                        0.0..250.0,
+                        &mut config.medium_viscosity,
+                    );
+                    ui.slider(
+                        hash!(),
+                        "ball count",
+                        1.0..15000.0,
+                        &mut config.num_circles_ui,
+                    );
+                    ui.slider(
+                        hash!(),
+                        "ball repel",
+                        1.0..100.0,
+                        &mut config.particle_repel_force,
+                    );
                     ui.checkbox(hash!(), "gravity", &mut config.gravity_enabled);
-                    ui.checkbox(hash!(), "allow phasing", &mut config.allow_ball_intersection);
+                    ui.checkbox(
+                        hash!(),
+                        "allow phasing",
+                        &mut config.allow_ball_intersection,
+                    );
                     ui.checkbox(hash!(), "draw vel.", &mut config.draw_velocities);
                     ui.slider(hash!(), "speed lim.", 10.0..500.0, &mut config.max_velocity);
                     ui.checkbox(hash!(), "boids", &mut config.boids);
                     if config.boids {
                         ui.slider(hash!(), "box size", 50.0..500.0, &mut config.boids_box_size);
-                        ui.slider(hash!(), "sep. amt", 10.0..100.0, &mut config.separation_distance);
+                        ui.slider(
+                            hash!(),
+                            "sep. amt",
+                            10.0..100.0,
+                            &mut config.separation_distance,
+                        );
                         ui.slider(hash!(), "sep. wt.", 0.1..5.0, &mut config.separation_weight);
-                        ui.slider(hash!(), "align. wt.", 0.1..5.0, &mut config.alignment_weight);
+                        ui.slider(
+                            hash!(),
+                            "align. wt.",
+                            0.1..5.0,
+                            &mut config.alignment_weight,
+                        );
                         ui.slider(hash!(), "coh. wt.", 0.1..5.0, &mut config.cohesion_weight);
                         ui.slider(hash!(), "boid wt.", 1.0..50.0, &mut config.boid_amount);
-                        ui.slider(hash!(), "avoid wl", 0.01..0.5, &mut config.avoid_walls_weight);
+                        ui.slider(
+                            hash!(),
+                            "avoid wl",
+                            0.01..0.5,
+                            &mut config.avoid_walls_weight,
+                        );
                     }
                 });
         }
