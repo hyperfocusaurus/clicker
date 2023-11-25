@@ -10,18 +10,38 @@ use macroquad::prelude::*;
 use macroquad::ui::root_ui;
 use macroquad::ui::widgets::Window;
 use miniquad::window::screen_size;
-use quad_rand::{srand, RandomRange};
+use quad_rand::{rand, srand, RandomRange};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use std::fs;
 use std::io::{BufWriter, Cursor};
-use merge::Merge;
+use std::collections::HashMap;
+use toml::Value;
 
 const DEFAULT_WIDTH: f32 = 1920.0;
 const DEFAULT_HEIGHT: f32 = 1080.0;
 
+macro_rules! toast_hash {
+    ($($x:expr),*) => {
+        {
+            (rand() as u64) << 32 | rand() as u64
+        }
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Circle(f32, f32, f32, Color, Vec2);
+
+trait RoundToDigits {
+    fn round_to_digits(self, digits: u32) -> Self;
+}
+
+impl RoundToDigits for f32 {
+    fn round_to_digits(self, digits: u32) -> f32 {
+        let factor = 10.0_f32.powi(digits as i32);
+        (self * factor).round() / factor
+    }
+}
 
 fn get_random_value<T: RandomRange>(min: T, max: T) -> T {
     T::gen_range(min, max)
@@ -51,21 +71,21 @@ fn conf() -> Conf {
     }
 }
 
-fn gen_circle(width: f32, height: f32) -> Circle {
+fn gen_circle(width: f32, height: f32, min_size: f32, max_size: f32) -> Circle {
     let x = get_random_value(0.0, width);
     let y = get_random_value(0.0, height);
     let mut h = get_random_value(0.0, 100.0);
     h /= 100.0;
     let color = hsl_to_rgb(h, 0.5, 0.5);
-    let circle_size = get_random_value(5.0, 15.0);
+    let circle_size = get_random_value(min_size, max_size);
     let velocity = Vec2::new(0.0, 0.0);
     Circle(x, y, circle_size, color, velocity)
 }
 
-fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, height: f32) {
+fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, height: f32, min_size: f32, max_size: f32) {
     circles.clear();
     for _i in 0..num_circles {
-        let circle = Box::new(gen_circle(width, height));
+        let circle = Box::new(gen_circle(width, height, min_size, max_size));
         circles.push(circle);
     }
 }
@@ -104,30 +124,32 @@ fn gen_sine_wave(freq: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
     samples
 }
 
-#[derive(Deserialize, Serialize, Clone, Merge)]
+#[derive(Deserialize, Serialize, Clone)]
 struct JiggleBallsConfig {
-    audio_enabled: Option<bool>,
-    is_fullscreen: Option<bool>,
-    jiggle: Option<f32>,
-    mouse_repel_force: Option<f32>,
-    mouse_attract_force: Option<f32>,
-    mouse_attract_distance: Option<f32>,
-    medium_viscosity: Option<f32>,
-    num_circles: Option<u32>,
-    num_circles_ui: Option<f32>,
-    gravity_enabled: Option<bool>,
-    particle_repel_force: Option<f32>,
-    allow_ball_intersection: Option<bool>,
-    draw_velocities: Option<bool>,
-    boids: Option<bool>,
-    boids_box_size: Option<f32>,
-    separation_distance: Option<f32>,
-    separation_weight: Option<f32>,
-    alignment_weight: Option<f32>,
-    cohesion_weight: Option<f32>,
-    avoid_walls_weight: Option<f32>,
-    boid_amount: Option<f32>,
-    max_velocity: Option<f32>,
+    min_circle_size: f32,
+    max_circle_size: f32,
+    audio_enabled: bool,
+    is_fullscreen: bool,
+    jiggle: f32,
+    mouse_repel_force: f32,
+    mouse_attract_force: f32,
+    mouse_attract_distance: f32,
+    medium_viscosity: f32,
+    num_circles: u32,
+    num_circles_ui: f32,
+    gravity_enabled: bool,
+    particle_repel_force: f32,
+    allow_ball_intersection: bool,
+    draw_velocities: bool,
+    boids: bool,
+    boids_box_size: f32,
+    separation_distance: f32,
+    separation_weight: f32,
+    alignment_weight: f32,
+    cohesion_weight: f32,
+    avoid_walls_weight: f32,
+    boid_amount: f32,
+    max_velocity: f32,
 }
 
 #[macroquad::main(conf)]
@@ -142,38 +164,118 @@ async fn main() {
 
     // the default values for all the configurable stuff
     let mut config = JiggleBallsConfig {
-        audio_enabled: Some(true),
-        is_fullscreen: Some(false),
-        jiggle: Some(3.0),
-        mouse_repel_force: Some(2.0),
-        mouse_attract_force: Some(0.15),
-        mouse_attract_distance: Some(100.0),
-        medium_viscosity: Some(100.0),
-        num_circles: Some(1000),
-        num_circles_ui: Some(1000.0),
-        gravity_enabled: Some(false),
-        particle_repel_force: Some(30.0),
-        allow_ball_intersection: Some(false),
-        draw_velocities: Some(false),
-        boids: Some(false),
-        boids_box_size: Some(10.0),
-        separation_distance: Some(10.0),
-        separation_weight: Some(1.0),
-        alignment_weight: Some(1.0),
-        cohesion_weight: Some(1.0),
-        avoid_walls_weight: Some(0.01),
-        boid_amount: Some(10.0),
-        max_velocity: Some(50.0),
+        min_circle_size: 5.0,
+        max_circle_size: 50.0,
+        audio_enabled: true,
+        is_fullscreen: false,
+        jiggle: 3.0,
+        mouse_repel_force: 2.0,
+        mouse_attract_force: 0.15,
+        mouse_attract_distance: 100.0,
+        medium_viscosity: 100.0,
+        num_circles: 1000,
+        num_circles_ui: 1000.0,
+        gravity_enabled: false,
+        particle_repel_force: 30.0,
+        allow_ball_intersection: false,
+        draw_velocities: false,
+        boids: false,
+        boids_box_size: 10.0,
+        separation_distance: 10.0,
+        separation_weight: 1.0,
+        alignment_weight: 1.0,
+        cohesion_weight: 1.0,
+        avoid_walls_weight: 0.01,
+        boid_amount: 10.0,
+        max_velocity: 50.0,
     };
 
     match fs::read_to_string("config.toml") {
         Ok(config_str) => {
-            let loaded_config: JiggleBallsConfig = toml::from_str(config_str.as_str())
+            let loaded_config: HashMap<String, Value> = toml::from_str(config_str.as_str())
                 .map_err(|err| {
                     println!("Could not read config file: {}", err);
                 })
                 .unwrap();
-            config.merge(loaded_config);
+            for (key, value) in loaded_config {
+                match key.as_str() {
+                    "min_circle_size" => {
+                        config.min_circle_size = value.try_into().unwrap();
+                    }
+                    "max_circle_size" => {
+                        config.max_circle_size = value.try_into().unwrap();
+                    }
+                    "audio_enabled" => {
+                        config.audio_enabled = value.as_bool().unwrap();
+                    }
+                    "is_fullscreen" => {
+                        config.is_fullscreen = value.as_bool().unwrap();
+                    }
+                    "jiggle" => {
+                        config.jiggle = value.try_into().unwrap();
+                    }
+                    "mouse_repel_force" => {
+                        config.mouse_repel_force = value.try_into().unwrap();
+                    }
+                    "mouse_attract_force" => {
+                        config.mouse_attract_force = value.try_into().unwrap();
+                    }
+                    "mouse_attract_distance" => {
+                        config.mouse_attract_distance = value.try_into().unwrap();
+                    }
+                    "medium_viscosity" => {
+                        config.medium_viscosity = value.try_into().unwrap();
+                    }
+                    "num_circles" => {
+                        config.num_circles = value.as_integer().unwrap() as u32;
+                    }
+                    "num_circles_ui" => {
+                        config.num_circles_ui = value.try_into().unwrap();
+                    }
+                    "gravity_enabled" => {
+                        config.gravity_enabled = value.as_bool().unwrap();
+                    }
+                    "particle_repel_force" => {
+                        config.particle_repel_force = value.try_into().unwrap();
+                    }
+                    "allow_ball_intersection" => {
+                        config.allow_ball_intersection = value.as_bool().unwrap();
+                    }
+                    "draw_velocities" => {
+                        config.draw_velocities = value.as_bool().unwrap();
+                    }
+                    "boids" => {
+                        config.boids = value.as_bool().unwrap();
+                    }
+                    "boids_box_size" => {
+                        config.boids_box_size = value.try_into().unwrap();
+                    }
+                    "separation_distance" => {
+                        config.separation_distance = value.try_into().unwrap();
+                    }
+                    "separation_weight" => {
+                        config.separation_weight = value.try_into().unwrap();
+                    }
+                    "alignment_weight" => {
+                        config.alignment_weight = value.try_into().unwrap();
+                    }
+                    "cohesion_weight" => {
+                        config.cohesion_weight = value.try_into().unwrap();
+                    }
+                    "avoid_walls_weight" => {
+                        config.avoid_walls_weight = value.try_into().unwrap();
+                    }
+                    "boid_amount" => {
+                        config.boid_amount = value.try_into().unwrap();
+                    }
+                    "max_velocity" => {
+                        config.max_velocity = value.try_into().unwrap();
+                    }
+                    _ => {
+                        println!("Unknown config key: {}", key);
+                    }
+                }
+            }
         }
         Err(err) => {
             println!(
@@ -194,7 +296,7 @@ async fn main() {
         (width, height) = screen_size();
         request_new_screen_size(width, height);
     }
-    reset_circles(&mut circles, config.num_circles, width, height);
+    reset_circles(&mut circles, config.num_circles, width, height, config.min_circle_size, config.max_circle_size);
     circles_quadtree.clear(bounding_box(width, height));
     for circ in circles.clone() {
         circles_quadtree.insert(circ.clone());
@@ -205,14 +307,25 @@ async fn main() {
         color: BLUE,
         ..Default::default()
     };
+
+    let mut toast_messages: HashMap<u64, (u32, String)> = HashMap::new();
+
     loop {
         let delta_time = get_frame_time();
         config.num_circles_ui = config.num_circles_ui.floor();
         config.num_circles = config.num_circles_ui as u32;
+        if config.min_circle_size > config.max_circle_size {
+            config.min_circle_size = config.max_circle_size;
+        }
+        if config.max_circle_size < config.min_circle_size {
+            config.max_circle_size = config.min_circle_size;
+        }
+        config.min_circle_size = config.min_circle_size.round_to_digits(1);
+        config.max_circle_size = config.max_circle_size.round_to_digits(1);
 
         if circles.len() < config.num_circles.try_into().unwrap() {
             for _ in 1..config.num_circles - circles.len() as u32 {
-                let circle = Box::new(gen_circle(width, height));
+                let circle = Box::new(gen_circle(width, height, config.min_circle_size, config.max_circle_size));
                 circles_quadtree.insert(circle.clone());
                 circles.push(circle);
             }
@@ -259,6 +372,7 @@ async fn main() {
             let _ = fs::write("config.toml", config_str.as_str()).map_err(|err| {
                 println!("Could not save config: {}", err);
             });
+            toast_messages.insert(hash!(), (60, "Saved config".to_string()));
         }
 
         if is_key_pressed(KeyCode::G) {
@@ -270,11 +384,12 @@ async fn main() {
         }
 
         if is_key_pressed(KeyCode::R) {
-            reset_circles(&mut circles, config.num_circles, width, height);
+            reset_circles(&mut circles, config.num_circles, width, height, config.min_circle_size, config.max_circle_size);
             circles_quadtree.clear(bounding_box(width, height));
             for circ in circles.clone() {
                 circles_quadtree.insert(circ.clone());
             }
+            toast_messages.insert(toast_hash!(), (60, "Reset circles".to_string()));
         }
 
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
@@ -437,15 +552,19 @@ async fn main() {
 
                 new_velocity.x += jiggle_x;
                 if new_x >= width - circle_size || new_x <= circle_size {
-                    let beep_tone = get_random_value(1.0, 8.0);
-                    beep(beep_tone, 0.05);
+                    if config.audio_enabled {
+                        let beep_tone = 100.0 / (circle_size);
+                        beep(beep_tone, 0.05);
+                    }
                     new_velocity.x = -(new_velocity.x / 2.0);
                 }
 
                 new_velocity.y += jiggle_y;
                 if new_y >= height - circle_size || new_y <= circle_size {
-                    let beep_tone = get_random_value(1.0, 8.0);
-                    beep(beep_tone, 0.05);
+                    if config.audio_enabled {
+                        let beep_tone = 100.0 / (circle_size);
+                        beep(beep_tone, 0.05);
+                    }
                     new_velocity.y = -(new_velocity.y / 2.0);
                 }
 
@@ -502,6 +621,40 @@ async fn main() {
                 RED,
             );
         }
+        // render toast messages (temporary messages that fade out after a few frames)
+        let mut toast_index = 0;
+        for (hash, (frame_count, msg)) in toast_messages.clone() {
+            let TextDimensions {
+                width: toast_text_width,
+                height: toast_text_height,
+                ..
+            } = measure_text(msg.as_str(), Some(&ui_font), 32, 1.0);
+            let toast_width = toast_text_width + 20.0;
+            let toast_height = toast_text_height + 20.0; 
+            let toast_y = (toast_index+1) as f32 * toast_height;
+            let toast_x = 20.0;
+            let toast_alpha_scale_factor = 0xFF / 60;
+            let toast_alpha = (frame_count * toast_alpha_scale_factor).clamp(0, 0xFF);
+            draw_rectangle(
+                toast_x,
+                toast_y + 10.0 - toast_height,
+                toast_width,
+                toast_height,
+                Color::from_rgba(0x00, 0x00, 0x00, toast_alpha as u8),
+            );
+            draw_text_ex(msg.as_str(), toast_x, toast_y, TextParams {
+                font: Some(&ui_font),
+                font_size: 32,
+                color: Color::from_rgba(0xFF, 0xFF, 0xFF, toast_alpha as u8),
+                ..Default::default()
+            });
+            if frame_count == 0 {
+                toast_messages.remove(&hash);
+            } else {
+                toast_messages.insert(hash, (frame_count - 1, msg));
+            }
+            toast_index += 1;
+        }
 
         if show_gui {
             let mut window_height = 300.0;
@@ -512,7 +665,10 @@ async fn main() {
                 .label("Controls")
                 .close_button(false)
                 .ui(&mut root_ui(), |ui| {
+                    ui.checkbox(hash!(), "audio", &mut config.audio_enabled);
                     ui.slider(hash!(), "Jiggle", 0.0..100.0, &mut config.jiggle);
+                    ui.slider(hash!(), "min ball size", 1.0..50.0, &mut config.min_circle_size);
+                    ui.slider(hash!(), "max ball size", 1.0..100.0, &mut config.max_circle_size);
                     ui.slider(
                         hash!(),
                         "push force",

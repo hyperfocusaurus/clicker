@@ -1,4 +1,7 @@
-is_fullscreen = false
+min_circle_size = 5.0
+max_circle_size = 50.0
+audio_enabled = false
+is_fullscreen = true
 jiggle = 3.0
 mouse_repel_force = 2.0
 mouse_attract_force = 0.15000000596046448
