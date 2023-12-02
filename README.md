@@ -25,7 +25,8 @@ d: Show debug info (FPS and current "Jiggle")
 =: Increase Jiggle amount (think of it as pressing the + key, but without needing to hold shift)
 -: Decrease Jiggle Amount
 g: Show GUI controls
-s: Save settings from GUI controls
+s: Save settings from GUI controls into "config.toml"
+l: Load settings from "config.toml"
 r: Reset the ball field
 f: Toggle fullscreen (note: may not work to turn fullscreen mode *off* due to a known issue)
 q: Quit

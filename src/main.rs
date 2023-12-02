@@ -12,21 +12,19 @@ use macroquad::ui::widgets::Window;
 use miniquad::window::screen_size;
 use quad_rand::{rand, srand, RandomRange};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
 use std::io::{BufWriter, Cursor};
-use std::collections::HashMap;
 use toml::Value;
 
 const DEFAULT_WIDTH: f32 = 1920.0;
 const DEFAULT_HEIGHT: f32 = 1080.0;
 
 macro_rules! toast_hash {
-    ($($x:expr),*) => {
-        {
-            (rand() as u64) << 32 | rand() as u64
-        }
-    };
+    ($($x:expr),*) => {{
+        (rand() as u64) << 32 | rand() as u64
+    }};
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,7 +80,14 @@ fn gen_circle(width: f32, height: f32, min_size: f32, max_size: f32) -> Circle {
     Circle(x, y, circle_size, color, velocity)
 }
 
-fn reset_circles(circles: &mut Vec<Box<Circle>>, num_circles: u32, width: f32, height: f32, min_size: f32, max_size: f32) {
+fn reset_circles(
+    circles: &mut Vec<Box<Circle>>,
+    num_circles: u32,
+    width: f32,
+    height: f32,
+    min_size: f32,
+    max_size: f32,
+) {
     circles.clear();
     for _i in 0..num_circles {
         let circle = Box::new(gen_circle(width, height, min_size, max_size));
@@ -148,48 +153,14 @@ struct JiggleBallsConfig {
     alignment_weight: f32,
     cohesion_weight: f32,
     avoid_walls_weight: f32,
+    avoid_walls_distance: f32,
     boid_amount: f32,
     max_velocity: f32,
+    starfield: bool,
+    warp_factor: f32,
 }
 
-#[macroquad::main(conf)]
-async fn main() {
-    let mut width: f32 = DEFAULT_WIDTH;
-    let mut height: f32 = DEFAULT_HEIGHT;
-    let mut show_gui = false;
-    let mut show_debug_gui = false;
-
-    let mut circles = Vec::new();
-    let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
-
-    // the default values for all the configurable stuff
-    let mut config = JiggleBallsConfig {
-        min_circle_size: 5.0,
-        max_circle_size: 50.0,
-        audio_enabled: true,
-        is_fullscreen: false,
-        jiggle: 3.0,
-        mouse_repel_force: 2.0,
-        mouse_attract_force: 0.15,
-        mouse_attract_distance: 100.0,
-        medium_viscosity: 100.0,
-        num_circles: 1000,
-        num_circles_ui: 1000.0,
-        gravity_enabled: false,
-        particle_repel_force: 30.0,
-        allow_ball_intersection: false,
-        draw_velocities: false,
-        boids: false,
-        boids_box_size: 10.0,
-        separation_distance: 10.0,
-        separation_weight: 1.0,
-        alignment_weight: 1.0,
-        cohesion_weight: 1.0,
-        avoid_walls_weight: 0.01,
-        boid_amount: 10.0,
-        max_velocity: 50.0,
-    };
-
+fn load_config (config: &mut JiggleBallsConfig) {
     match fs::read_to_string("config.toml") {
         Ok(config_str) => {
             let loaded_config: HashMap<String, Value> = toml::from_str(config_str.as_str())
@@ -265,11 +236,20 @@ async fn main() {
                     "avoid_walls_weight" => {
                         config.avoid_walls_weight = value.try_into().unwrap();
                     }
+                    "avoid_walls_distance" => {
+                        config.avoid_walls_distance = value.try_into().unwrap();
+                    }
                     "boid_amount" => {
                         config.boid_amount = value.try_into().unwrap();
                     }
                     "max_velocity" => {
                         config.max_velocity = value.try_into().unwrap();
+                    }
+                    "starfield" => {
+                        config.starfield = value.as_bool().unwrap();
+                    }
+                    "warp_factor" => {
+                        config.warp_factor = value.try_into().unwrap();
                     }
                     _ => {
                         println!("Unknown config key: {}", key);
@@ -284,6 +264,50 @@ async fn main() {
             );
         }
     }
+}
+
+#[macroquad::main(conf)]
+async fn main() {
+    let mut width: f32 = DEFAULT_WIDTH;
+    let mut height: f32 = DEFAULT_HEIGHT;
+    let mut show_gui = false;
+    let mut show_debug_gui = false;
+
+    let mut circles = Vec::new();
+    let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
+
+    // the default values for all the configurable stuff
+    let mut config = JiggleBallsConfig {
+        min_circle_size: 5.0,
+        max_circle_size: 50.0,
+        audio_enabled: true,
+        is_fullscreen: false,
+        jiggle: 3.0,
+        mouse_repel_force: 2.0,
+        mouse_attract_force: 0.15,
+        mouse_attract_distance: 100.0,
+        medium_viscosity: 100.0,
+        num_circles: 1000,
+        num_circles_ui: 1000.0,
+        gravity_enabled: false,
+        particle_repel_force: 30.0,
+        allow_ball_intersection: false,
+        draw_velocities: false,
+        boids: false,
+        boids_box_size: 10.0,
+        separation_distance: 10.0,
+        separation_weight: 1.0,
+        alignment_weight: 1.0,
+        cohesion_weight: 1.0,
+        avoid_walls_weight: 0.01,
+        avoid_walls_distance: 100.0,
+        boid_amount: 10.0,
+        max_velocity: 50.0,
+        starfield: false,
+        warp_factor: 1.0,
+    };
+
+    load_config(&mut config);
 
     let ui_font = load_ttf_font("OfficeCodePro-Regular.ttf")
         .await
@@ -296,7 +320,14 @@ async fn main() {
         (width, height) = screen_size();
         request_new_screen_size(width, height);
     }
-    reset_circles(&mut circles, config.num_circles, width, height, config.min_circle_size, config.max_circle_size);
+    reset_circles(
+        &mut circles,
+        config.num_circles,
+        width,
+        height,
+        config.min_circle_size,
+        config.max_circle_size,
+    );
     circles_quadtree.clear(bounding_box(width, height));
     for circ in circles.clone() {
         circles_quadtree.insert(circ.clone());
@@ -325,7 +356,12 @@ async fn main() {
 
         if circles.len() < config.num_circles.try_into().unwrap() {
             for _ in 1..config.num_circles - circles.len() as u32 {
-                let circle = Box::new(gen_circle(width, height, config.min_circle_size, config.max_circle_size));
+                let circle = Box::new(gen_circle(
+                    width,
+                    height,
+                    config.min_circle_size,
+                    config.max_circle_size,
+                ));
                 circles_quadtree.insert(circle.clone());
                 circles.push(circle);
             }
@@ -375,6 +411,11 @@ async fn main() {
             toast_messages.insert(hash!(), (60, "Saved config".to_string()));
         }
 
+        if is_key_pressed(KeyCode::L) {
+            load_config(&mut config);
+            toast_messages.insert(hash!(), (60, "Loaded config".to_string()));
+        }
+
         if is_key_pressed(KeyCode::G) {
             show_gui = !show_gui;
         }
@@ -384,12 +425,19 @@ async fn main() {
         }
 
         if is_key_pressed(KeyCode::R) {
-            reset_circles(&mut circles, config.num_circles, width, height, config.min_circle_size, config.max_circle_size);
+            reset_circles(
+                &mut circles,
+                config.num_circles,
+                width,
+                height,
+                config.min_circle_size,
+                config.max_circle_size,
+            );
             circles_quadtree.clear(bounding_box(width, height));
             for circ in circles.clone() {
                 circles_quadtree.insert(circ.clone());
             }
-            toast_messages.insert(toast_hash!(), (60, "Reset circles".to_string()));
+            toast_messages.insert(toast_hash!(), (60, "Reset".to_string()));
         }
 
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
@@ -441,7 +489,7 @@ async fn main() {
 
                 let mut new_pos = vec2(new_x, new_y);
                 new_pos += velocity * delta_time;
-                if velocity.x != 0.0 || velocity.y != 0.0 {
+                if !config.starfield && velocity.x != 0.0 || velocity.y != 0.0 {
                     new_velocity -= velocity.normalize() * delta_time * config.medium_viscosity;
                 }
 
@@ -450,6 +498,27 @@ async fn main() {
                 }
                 if new_velocity.y < 0.01 && new_velocity.y > -0.01 {
                     new_velocity.y = 0.0;
+                }
+
+                // if starfield is enabled, move away from the center of the screen
+                if config.starfield {
+                    let center = vec2(width / 2.0, height / 2.0);
+                    let from_center = vec2(x, y) - center;
+                    let dist = from_center.length();
+                    if dist < circle_size {
+                        // pick a random direction to move in if you're really close to the center
+                        let mut rand_dir = vec2(0.0, 0.0);
+                        while rand_dir.x == 0.0 && rand_dir.y == 0.0 {
+                            rand_dir = vec2(
+                                get_random_value(-1.0, 1.0),
+                                get_random_value(-1.0, 1.0),
+                            );
+                        }
+                        new_velocity = rand_dir * delta_time * 10_f32.powf(config.warp_factor / 2.0);
+                    } else {
+                        // move away from the center
+                        new_velocity = from_center * delta_time * 10_f32.powf(config.warp_factor / 2.0);
+                    }
                 }
 
                 if config.boids {
@@ -489,9 +558,17 @@ async fn main() {
                             // turn alignment and cohesion into mean averages of position/velocity
                             alignment /= (results.len() - 1) as f32;
                             cohesion /= (results.len() - 1) as f32;
+                            separation /= (results.len() - 1) as f32;
                         }
-                        let mut avoid_walls = vec2(width / 2.0, height / 2.0) - vec2(x, y);
-                        avoid_walls *= config.avoid_walls_weight;
+                        let mut avoid_walls = vec2(0.0, 0.0);
+                        if x < config.avoid_walls_distance
+                            || x > width - config.avoid_walls_distance
+                            || y < config.avoid_walls_distance
+                            || y > height - config.avoid_walls_distance
+                        {
+                            avoid_walls = vec2(width / 2.0, height / 2.0) - vec2(x, y);
+                            avoid_walls *= config.avoid_walls_weight;
+                        }
                         separation *= config.separation_weight;
                         alignment *= config.alignment_weight;
                         cohesion = (cohesion - vec2(x, y)).normalize() * config.cohesion_weight;
@@ -503,7 +580,7 @@ async fn main() {
                 }
 
                 // if the magnitude of the velocity > max_velocity, clamp it back to that
-                if new_velocity.length() > config.max_velocity {
+                if !config.starfield && new_velocity.length() > config.max_velocity {
                     new_velocity = new_velocity.normalize() * config.max_velocity;
                 }
 
@@ -512,22 +589,24 @@ async fn main() {
 
                 // collision detection
                 // todo: figure out good values for the search field
-                let query_range = Rect::new(x - 10.0, y - 10.0, 20.0, 20.0);
-                let results = circles_quadtree.query(query_range);
-                for other in results {
-                    if other == *circ {
-                        continue;
-                    }
-                    // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
-                    let Circle(other_x, other_y, other_size, _, _) = *other;
-                    let dist = vec2(other_x, other_y).distance(vec2(x, y));
-                    if dist < (circle_size + other_size) {
-                        let x_dist = other_x - x;
-                        let y_dist = other_y - y;
-                        new_velocity -= vec2(x_dist, y_dist).normalize()
-                            * dist
-                            * delta_time
-                            * config.particle_repel_force;
+                if !config.starfield {
+                    let query_range = Rect::new(x - 10.0, y - 10.0, 20.0, 20.0);
+                    let results = circles_quadtree.query(query_range);
+                    for other in results {
+                        if other == *circ {
+                            continue;
+                        }
+                        // sqrt (pow(abs(other_x - x), 2) + pow(abs(other_y - y), 2))
+                        let Circle(other_x, other_y, other_size, _, _) = *other;
+                        let dist = vec2(other_x, other_y).distance(vec2(x, y));
+                        if dist < (circle_size + other_size) {
+                            let x_dist = other_x - x;
+                            let y_dist = other_y - y;
+                            new_velocity -= vec2(x_dist, y_dist).normalize()
+                                * dist
+                                * delta_time
+                                * config.particle_repel_force;
+                        }
                     }
                 }
 
@@ -570,16 +649,40 @@ async fn main() {
 
                 // make the walls actively "push" circles away
                 if new_y >= height - circle_size {
-                    new_velocity.y -= 1.0;
+                    if config.starfield {
+                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        new_x += jiggle_x;
+                        new_y += jiggle_y;
+                    } else {
+                        new_velocity.y -= 1.0;
+                    }
                 }
                 if new_x >= width - circle_size {
-                    new_velocity.x -= 1.0;
+                    if config.starfield {
+                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        new_x += jiggle_x;
+                        new_y += jiggle_y;
+                    } else {
+                        new_velocity.x -= 1.0;
+                    }
                 }
                 if new_y <= circle_size {
-                    new_velocity.y += 1.0;
+                    if config.starfield {
+                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        new_x += jiggle_x;
+                        new_y += jiggle_y;
+                    } else {
+                        new_velocity.y += 1.0;
+                    }
                 }
                 if new_x <= circle_size {
-                    new_velocity.x += 1.0;
+                    if config.starfield {
+                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        new_x += jiggle_x;
+                        new_y += jiggle_y;
+                    } else {
+                        new_velocity.x += 1.0;
+                    }
                 }
 
                 new_x = new_x.clamp(circle_size, width - circle_size);
@@ -630,8 +733,8 @@ async fn main() {
                 ..
             } = measure_text(msg.as_str(), Some(&ui_font), 32, 1.0);
             let toast_width = toast_text_width + 20.0;
-            let toast_height = toast_text_height + 20.0; 
-            let toast_y = (toast_index+1) as f32 * toast_height;
+            let toast_height = toast_text_height + 20.0;
+            let toast_y = (toast_index + 1) as f32 * toast_height;
             let toast_x = 20.0;
             let toast_alpha_scale_factor = 0xFF / 60;
             let toast_alpha = (frame_count * toast_alpha_scale_factor).clamp(0, 0xFF);
@@ -642,12 +745,17 @@ async fn main() {
                 toast_height,
                 Color::from_rgba(0x00, 0x00, 0x00, toast_alpha as u8),
             );
-            draw_text_ex(msg.as_str(), toast_x, toast_y, TextParams {
-                font: Some(&ui_font),
-                font_size: 32,
-                color: Color::from_rgba(0xFF, 0xFF, 0xFF, toast_alpha as u8),
-                ..Default::default()
-            });
+            draw_text_ex(
+                msg.as_str(),
+                toast_x,
+                toast_y,
+                TextParams {
+                    font: Some(&ui_font),
+                    font_size: 32,
+                    color: Color::from_rgba(0xFF, 0xFF, 0xFF, toast_alpha as u8),
+                    ..Default::default()
+                },
+            );
             if frame_count == 0 {
                 toast_messages.remove(&hash);
             } else {
@@ -657,7 +765,7 @@ async fn main() {
         }
 
         if show_gui {
-            let mut window_height = 300.0;
+            let mut window_height = 400.0;
             if config.boids {
                 window_height += 150.0;
             }
@@ -667,8 +775,18 @@ async fn main() {
                 .ui(&mut root_ui(), |ui| {
                     ui.checkbox(hash!(), "audio", &mut config.audio_enabled);
                     ui.slider(hash!(), "Jiggle", 0.0..100.0, &mut config.jiggle);
-                    ui.slider(hash!(), "min ball size", 1.0..50.0, &mut config.min_circle_size);
-                    ui.slider(hash!(), "max ball size", 1.0..100.0, &mut config.max_circle_size);
+                    ui.slider(
+                        hash!(),
+                        "min ball size",
+                        1.0..50.0,
+                        &mut config.min_circle_size,
+                    );
+                    ui.slider(
+                        hash!(),
+                        "max ball size",
+                        1.0..100.0,
+                        &mut config.max_circle_size,
+                    );
                     ui.slider(
                         hash!(),
                         "push force",
@@ -713,9 +831,13 @@ async fn main() {
                     );
                     ui.checkbox(hash!(), "draw vel.", &mut config.draw_velocities);
                     ui.slider(hash!(), "speed lim.", 10.0..500.0, &mut config.max_velocity);
-                    ui.checkbox(hash!(), "boids", &mut config.boids);
+                    if config.starfield {
+                        ui.slider(hash!(), "warp factor", 1.0..10.0, &mut config.warp_factor);
+                    } else {
+                        ui.checkbox(hash!(), "boids", &mut config.boids);
+                    }
                     if config.boids {
-                        ui.slider(hash!(), "box size", 50.0..500.0, &mut config.boids_box_size);
+                        ui.slider(hash!(), "box size", 1.0..50.0, &mut config.boids_box_size);
                         ui.slider(
                             hash!(),
                             "sep. amt",
@@ -737,6 +859,14 @@ async fn main() {
                             0.01..0.5,
                             &mut config.avoid_walls_weight,
                         );
+                        ui.slider(
+                            hash!(),
+                            "avoid wl dist.",
+                            10.0..500.0,
+                            &mut config.avoid_walls_distance,
+                        );  
+                    } else {
+                        ui.checkbox(hash!(), "starfield", &mut config.starfield);
                     }
                 });
         }
