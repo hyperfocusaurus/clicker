@@ -158,6 +158,7 @@ struct JiggleBallsConfig {
     max_velocity: f32,
     starfield: bool,
     warp_factor: f32,
+    monochrome: bool,
 }
 
 fn load_config (config: &mut JiggleBallsConfig) {
@@ -251,6 +252,9 @@ fn load_config (config: &mut JiggleBallsConfig) {
                     "warp_factor" => {
                         config.warp_factor = value.try_into().unwrap();
                     }
+                    "monochrome" => {
+                        config.monochrome = value.as_bool().unwrap();
+                    }
                     _ => {
                         println!("Unknown config key: {}", key);
                     }
@@ -272,6 +276,7 @@ async fn main() {
     let mut height: f32 = DEFAULT_HEIGHT;
     let mut show_gui = false;
     let mut show_debug_gui = false;
+    let mut mouse_last_frame = vec2(0.0, 0.0);
 
     let mut circles = Vec::new();
     let mut circles_quadtree = Quadtree::new(Rect::new(0.0, 0.0, width, height));
@@ -305,6 +310,7 @@ async fn main() {
         max_velocity: 50.0,
         starfield: false,
         warp_factor: 1.0,
+        monochrome: false,
     };
 
     load_config(&mut config);
@@ -340,6 +346,8 @@ async fn main() {
     };
 
     let mut toast_messages: HashMap<u64, (u32, String)> = HashMap::new();
+
+    let mut starfield_origin = vec2(width / 2.0, height / 2.0);
 
     loop {
         let delta_time = get_frame_time();
@@ -437,11 +445,23 @@ async fn main() {
             for circ in circles.clone() {
                 circles_quadtree.insert(circ.clone());
             }
+            starfield_origin = vec2(width / 2.0, height / 2.0);
             toast_messages.insert(toast_hash!(), (60, "Reset".to_string()));
         }
 
         clear_background(Color::from_rgba(0x00, 0x00, 0x00, 0xC0));
         let (mouse_x, mouse_y) = mouse_position();
+
+        // mouse control for starfield
+        if config.starfield {
+            // when the user drags the mouse, move the starfield in the opposite direction,
+            // by moving the starfield origin point
+            if is_mouse_button_down(MouseButton::Left) {
+                let mouse_x_dist = mouse_x - mouse_last_frame.x;
+                let mouse_y_dist = mouse_y - mouse_last_frame.y;
+                starfield_origin -= vec2(mouse_x_dist, mouse_y_dist) * delta_time * 100.0;
+            }
+        }
 
         circles = circles
             .iter()
@@ -467,15 +487,24 @@ async fn main() {
                         }
                     }
                 }
-                draw_circle(x, y, circle_size, color);
+                if config.monochrome {
+                    draw_circle(x, y, circle_size, WHITE);
+                } else {
+                    draw_circle(x, y, circle_size, color);
+                }
 
                 if config.draw_velocities {
                     let Vec2 {
                         x: next_x,
                         y: next_y,
                     } = vec2(x, y) + velocity;
-                    draw_line(x, y, next_x, next_y, 1.0, RED);
+                    let mut color = RED;
+                    if config.monochrome {
+                        color = WHITE;
+                    }
+                    draw_line(x, y, next_x, next_y, 1.0, color);
                 }
+
 
                 let jiggle_x: f32 = get_random_value(-(config.jiggle), config.jiggle);
                 let jiggle_y: f32 = get_random_value(-(config.jiggle), config.jiggle);
@@ -502,8 +531,7 @@ async fn main() {
 
                 // if starfield is enabled, move away from the center of the screen
                 if config.starfield {
-                    let center = vec2(width / 2.0, height / 2.0);
-                    let from_center = vec2(x, y) - center;
+                    let from_center = vec2(x, y) - starfield_origin;
                     let dist = from_center.length();
                     if dist < circle_size {
                         // pick a random direction to move in if you're really close to the center
@@ -611,7 +639,7 @@ async fn main() {
                 }
 
                 // disable the mouse interaction while the gui is on screen
-                if !show_gui {
+                if !show_gui && !config.starfield {
                     let mut mouse_gravity = 0.0;
                     let mut mouse_distance = config.mouse_attract_distance;
                     if is_mouse_button_down(MouseButton::Left) {
@@ -650,7 +678,7 @@ async fn main() {
                 // make the walls actively "push" circles away
                 if new_y >= height - circle_size {
                     if config.starfield {
-                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        Vec2{x: new_x, y: new_y} = starfield_origin;
                         new_x += jiggle_x;
                         new_y += jiggle_y;
                     } else {
@@ -659,7 +687,7 @@ async fn main() {
                 }
                 if new_x >= width - circle_size {
                     if config.starfield {
-                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        Vec2{x: new_x, y: new_y} = starfield_origin;
                         new_x += jiggle_x;
                         new_y += jiggle_y;
                     } else {
@@ -668,7 +696,7 @@ async fn main() {
                 }
                 if new_y <= circle_size {
                     if config.starfield {
-                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        Vec2{x: new_x, y: new_y} = starfield_origin;
                         new_x += jiggle_x;
                         new_y += jiggle_y;
                     } else {
@@ -677,7 +705,7 @@ async fn main() {
                 }
                 if new_x <= circle_size {
                     if config.starfield {
-                        Vec2{x: new_x, y: new_y} = vec2(width / 2.0, height / 2.0);
+                        Vec2{x: new_x, y: new_y} = starfield_origin;
                         new_x += jiggle_x;
                         new_y += jiggle_y;
                     } else {
@@ -831,9 +859,7 @@ async fn main() {
                     );
                     ui.checkbox(hash!(), "draw vel.", &mut config.draw_velocities);
                     ui.slider(hash!(), "speed lim.", 10.0..500.0, &mut config.max_velocity);
-                    if config.starfield {
-                        ui.slider(hash!(), "warp factor", 1.0..10.0, &mut config.warp_factor);
-                    } else {
+                    if !config.starfield {
                         ui.checkbox(hash!(), "boids", &mut config.boids);
                     }
                     if config.boids {
@@ -867,9 +893,15 @@ async fn main() {
                         );  
                     } else {
                         ui.checkbox(hash!(), "starfield", &mut config.starfield);
+                        if config.starfield {
+                            ui.slider(hash!(), "warp factor", 1.0..10.0, &mut config.warp_factor);
+                            ui.checkbox(hash!(), "monochrome", &mut config.monochrome);
+                        } 
                     }
                 });
         }
+
+        mouse_last_frame = vec2(mouse_x, mouse_y);
 
         next_frame().await;
     }
